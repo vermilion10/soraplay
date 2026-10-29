@@ -165,6 +165,7 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.AniList.ForgetUser()
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -266,9 +267,19 @@ func writeErr(w http.ResponseWriter, status int, msg string) {
 
 func writeAniListErr(w http.ResponseWriter, err error) {
 	var ae *anilist.Error
-	if errors.As(err, &ae) && ae.Status == http.StatusUnauthorized {
-		writeErr(w, http.StatusUnauthorized, "AniList session expired, log in again")
-		return
+	if errors.As(err, &ae) {
+		switch ae.Status {
+		case http.StatusUnauthorized:
+			writeErr(w, http.StatusUnauthorized, "AniList session expired, log in again")
+			return
+		case http.StatusTooManyRequests:
+			w.Header().Set("Retry-After", "60")
+			writeErr(w, http.StatusTooManyRequests, "AniList is limiting requests right now. Wait a minute and try again.")
+			return
+		case http.StatusNotFound:
+			writeErr(w, http.StatusNotFound, "AniList has no anime with this ID.")
+			return
+		}
 	}
 	writeErr(w, http.StatusBadGateway, err.Error())
 }

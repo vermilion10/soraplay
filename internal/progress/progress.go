@@ -68,6 +68,7 @@ func (w *Worker) flush(ctx context.Context) {
 }
 
 func (w *Worker) send(ctx context.Context, token string, q store.QueuedProgress) error {
+	w.AniList.Forget(q.AnilistID) // decide on the current entry, not a cached one
 	m, err := w.AniList.Media(ctx, token, q.AnilistID)
 	if err != nil {
 		return err
@@ -80,6 +81,7 @@ func (w *Worker) send(ctx context.Context, token string, q store.QueuedProgress)
 	if _, err := w.AniList.SaveProgress(ctx, token, q.AnilistID, q.Progress, status); err != nil {
 		return err
 	}
+	w.AniList.Forget(q.AnilistID)
 	log.Printf("progress: anime %d set to ep %d (%s)", q.AnilistID, q.Progress, status)
 	return w.Store.DoneProgress(ctx, q.AnilistID, q.Progress)
 }

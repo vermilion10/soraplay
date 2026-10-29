@@ -84,11 +84,16 @@ const mediaFields = `
 	nextAiringEpisode { episode airingAt }`
 
 // Client talks to AniList. Token may be empty for public queries.
+//
+// AniList allows about 30 requests a minute, so media is cached: for an hour
+// without the viewer's list entry, and for a minute with it, so progress
+// shown on anime pages is never more than a minute behind.
 type Client struct {
 	HTTP *http.Client
 
-	mu    sync.Mutex
-	cache map[int]cachedMedia
+	mu        sync.Mutex
+	cache     map[int]cachedMedia // without mediaListEntry
+	userCache map[int]cachedMedia // with the viewer's mediaListEntry
 }
 
 type cachedMedia struct {
@@ -96,8 +101,17 @@ type cachedMedia struct {
 	at time.Time
 }
 
+const (
+	mediaTTL = time.Hour
+	userTTL  = time.Minute
+)
+
 func New() *Client {
-	return &Client{HTTP: &http.Client{Timeout: 15 * time.Second}, cache: map[int]cachedMedia{}}
+	return &Client{
+		HTTP:      &http.Client{Timeout: 15 * time.Second},
+		cache:     map[int]cachedMedia{},
+		userCache: map[int]cachedMedia{},
+	}
 }
 
 // Error is a GraphQL or HTTP error from AniList.
@@ -182,17 +196,18 @@ func (c *Client) List(ctx context.Context, token string, userID int, statuses []
 	}
 	for _, it := range items {
 		c.put(it.Media)
+		m := it.Media
+		entry := it.ListEntry
+		m.MediaListEntry = &entry
+		c.putUser(m)
 	}
 	return items, nil
 }
 
-// Media returns one anime. With a token it includes the viewer's list entry,
-// and the result is never cached so progress is current.
+// Media returns one anime. With a token it includes the viewer's list entry.
 func (c *Client) Media(ctx context.Context, token string, id int) (*Media, error) {
-	if token == "" {
-		if m, ok := c.get(id); ok {
-			return &m, nil
-		}
+	if m, ok := c.get(id, token != ""); ok {
+		return &m, nil
 	}
 	entry := ""
 	if token != "" {
@@ -204,7 +219,25 @@ func (c *Client) Media(ctx context.Context, token string, id int) (*Media, error
 		return nil, err
 	}
 	c.put(out.Media)
+	if token != "" {
+		c.putUser(out.Media)
+	}
 	return &out.Media, nil
+}
+
+// Forget drops the cached list entry for id, after it changed or before it
+// must be read fresh.
+func (c *Client) Forget(id int) {
+	c.mu.Lock()
+	delete(c.userCache, id)
+	c.mu.Unlock()
+}
+
+// ForgetUser drops every cached list entry, when the viewer logs out.
+func (c *Client) ForgetUser() {
+	c.mu.Lock()
+	c.userCache = map[int]cachedMedia{}
+	c.mu.Unlock()
 }
 
 func (c *Client) Search(ctx context.Context, token, search string) ([]Media, error) {
@@ -251,11 +284,15 @@ func (c *Client) SaveProgress(ctx context.Context, token string, mediaID, progre
 	return &out.SaveMediaListEntry, nil
 }
 
-func (c *Client) get(id int) (Media, bool) {
+func (c *Client) get(id int, withEntry bool) (Media, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	cm, ok := c.cache[id]
-	if !ok || time.Since(cm.at) > time.Hour {
+	cache, ttl := c.cache, mediaTTL
+	if withEntry {
+		cache, ttl = c.userCache, userTTL
+	}
+	cm, ok := cache[id]
+	if !ok || time.Since(cm.at) > ttl {
 		return Media{}, false
 	}
 	return cm.m, true
@@ -265,6 +302,12 @@ func (c *Client) put(m Media) {
 	m.MediaListEntry = nil
 	c.mu.Lock()
 	c.cache[m.ID] = cachedMedia{m: m, at: time.Now()}
+	c.mu.Unlock()
+}
+
+func (c *Client) putUser(m Media) {
+	c.mu.Lock()
+	c.userCache[m.ID] = cachedMedia{m: m, at: time.Now()}
 	c.mu.Unlock()
 }
 
