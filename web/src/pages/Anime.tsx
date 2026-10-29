@@ -64,20 +64,27 @@ function Detail({ data }: { data: AnimeDetail }) {
                 {entry.score > 0 && ` · Score ${formatScore(entry.score, user?.mediaListOptions.scoreFormat ?? '')}`}
               </p>
             )}
-            {user && (
-              <button type="button" onClick={() => setEditing(true)} className="min-h-11 text-sm underline">
-                {entry ? 'Edit list entry' : 'Add to list'}
-              </button>
-            )}
-            {next !== undefined && (
-              <Link
-                to={`/watch/${m.id}/${next}`}
-                className="mt-4 inline-flex min-h-11 items-baseline gap-2 rounded-md bg-accent px-5 py-2 text-bg hover:brightness-110"
-              >
-                <span className="text-sm font-medium">Play</span>
-                <span className="font-display text-2xl leading-none font-bold">EP {next}</span>
-              </Link>
-            )}
+            {/* Play is the one accent on the page; the list action sits beside it as a plain outline. */}
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              {next !== undefined && (
+                <Link
+                  to={`/watch/${m.id}/${next}`}
+                  className="inline-flex min-h-11 items-baseline gap-2 rounded-md bg-accent px-5 py-2 text-bg hover:brightness-110"
+                >
+                  <span className="text-sm font-medium">Play</span>
+                  <span className="font-display text-2xl leading-none font-bold">EP {next}</span>
+                </Link>
+              )}
+              {user && (
+                <button
+                  type="button"
+                  onClick={() => setEditing(true)}
+                  className="min-h-11 rounded-md border border-line px-4 text-sm hover:border-muted"
+                >
+                  {entry ? 'Edit list entry' : 'Add to list'}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
