@@ -13,8 +13,11 @@ services:
     env_file: .env
     environment:
       NONTON_DATA: /data
+      PREFETCH_DIR: /saved
     volumes:
       - ./data:/data
+      # Saved episodes; set SAVED_DIR in .env to keep them on another disk.
+      - ${SAVED_DIR:-./saved}:/saved
     ports:
       # Bound to localhost only; expose it with `tailscale serve` (see README).
       - "127.0.0.1:8787:8787"
