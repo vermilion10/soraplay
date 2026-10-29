@@ -1,6 +1,6 @@
 import { Link } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
-import { api, nextEpisode, titleOf, type ListItem, type Me } from '../lib/api'
+import { api, clock, nextEpisode, resumable, titleOf, type ListItem, type Me } from '../lib/api'
 import { PosterGrid } from '../components/PosterGrid'
 import { Empty, ErrorBox, Loading } from '../components/States'
 
@@ -82,6 +82,8 @@ function progressNote(it: ListItem): string {
 function ContinueCard({ item }: { item: ListItem }) {
   const m = item.media
   const next = nextEpisode(m, item.progress)
+  // An episode past the AniList progress that was left halfway, maybe on another device.
+  const resume = resumable(item.resume) && item.resume.episode > item.progress ? item.resume : null
   const notOutYet = next !== null && m.nextAiringEpisode !== null && next >= m.nextAiringEpisode.episode
   const tint = m.coverImage.color || '#3a302a'
 
@@ -101,7 +103,16 @@ function ContinueCard({ item }: { item: ListItem }) {
           </Link>
           <p className="mt-1 text-sm text-muted">{progressNote(item)}</p>
           <div className="mt-auto pt-4">
-            {next === null ? (
+            {resume ? (
+              <Link
+                to={`/watch/${m.id}/${resume.episode}`}
+                className="inline-flex min-h-11 items-baseline gap-2 rounded-md bg-accent px-5 py-2 text-bg hover:brightness-110"
+              >
+                <span className="text-sm font-medium">Resume</span>
+                <span className="font-display text-2xl leading-none font-bold">EP {resume.episode}</span>
+                <span className="text-sm">at {clock(resume.position)}</span>
+              </Link>
+            ) : next === null ? (
               <p className="text-sm">All episodes watched.</p>
             ) : notOutYet ? (
               <p className="text-sm">

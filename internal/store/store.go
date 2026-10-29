@@ -26,6 +26,14 @@ CREATE TABLE IF NOT EXISTS mappings (
 	updated_at  INTEGER NOT NULL,
 	PRIMARY KEY (anilist_id, provider)
 );
+CREATE TABLE IF NOT EXISTS positions (
+	anilist_id INTEGER NOT NULL,
+	episode    REAL    NOT NULL,
+	position   REAL    NOT NULL,
+	duration   REAL    NOT NULL,
+	updated_at INTEGER NOT NULL,
+	PRIMARY KEY (anilist_id, episode)
+);
 CREATE TABLE IF NOT EXISTS progress_queue (
 	anilist_id INTEGER PRIMARY KEY,
 	progress   INTEGER NOT NULL,
@@ -173,4 +181,57 @@ func (s *Store) FailProgress(ctx context.Context, anilistID int, msg string) err
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE progress_queue SET attempts = attempts + 1, last_error = ? WHERE anilist_id = ?`, msg, anilistID)
 	return err
+}
+
+// Position is where playback of one episode stopped, in seconds.
+type Position struct {
+	AnilistID int     `json:"-"`
+	Episode   float64 `json:"episode"`
+	Position  float64 `json:"position"`
+	Duration  float64 `json:"duration"`
+	UpdatedAt int64   `json:"updatedAt"`
+}
+
+func (s *Store) SavePosition(ctx context.Context, p Position) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO positions (anilist_id, episode, position, duration, updated_at) VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT (anilist_id, episode) DO UPDATE SET
+			position = excluded.position, duration = excluded.duration, updated_at = excluded.updated_at`,
+		p.AnilistID, p.Episode, p.Position, p.Duration, time.Now().Unix())
+	return err
+}
+
+// Position returns the saved position of one episode, or nil.
+func (s *Store) Position(ctx context.Context, anilistID int, episode float64) (*Position, error) {
+	p := Position{AnilistID: anilistID, Episode: episode}
+	err := s.db.QueryRowContext(ctx,
+		`SELECT position, duration, updated_at FROM positions WHERE anilist_id = ? AND episode = ?`,
+		anilistID, episode).Scan(&p.Position, &p.Duration, &p.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+// LatestPositions returns, for each anime, the episode watched most recently.
+func (s *Store) LatestPositions(ctx context.Context) (map[int]Position, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT anilist_id, episode, position, duration, updated_at FROM positions p
+		WHERE updated_at = (SELECT max(updated_at) FROM positions q WHERE q.anilist_id = p.anilist_id)`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int]Position{}
+	for rows.Next() {
+		var p Position
+		if err := rows.Scan(&p.AnilistID, &p.Episode, &p.Position, &p.Duration, &p.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out[p.AnilistID] = p
+	}
+	return out, rows.Err()
 }

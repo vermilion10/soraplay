@@ -281,7 +281,12 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 			streams[i].URL = s.relayURL(streams[i].URL)
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"episode": ep, "title": pe.Title, "streams": streams})
+	resume, err := s.Store.Position(ctx, m.ID, ep)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"episode": ep, "title": pe.Title, "streams": streams, "resume": resume})
 }
 
 // progress queues "episode watched" for AniList. The worker sends it.
@@ -305,4 +310,29 @@ func (s *Server) progress(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Progress.Wake()
 	writeJSON(w, http.StatusAccepted, map[string]bool{"queued": true})
+}
+
+// savePosition records where playback of an episode is, so another device
+// can resume there.
+func (s *Server) savePosition(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(r)
+	ep, err := strconv.ParseFloat(r.PathValue("ep"), 64)
+	if !ok || err != nil {
+		writeErr(w, http.StatusBadRequest, "bad anime id or episode")
+		return
+	}
+	var body struct {
+		Position float64 `json:"position"`
+		Duration float64 `json:"duration"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Position < 0 || body.Duration <= 0 {
+		writeErr(w, http.StatusBadRequest, "position and duration are required")
+		return
+	}
+	p := store.Position{AnilistID: id, Episode: ep, Position: body.Position, Duration: body.Duration}
+	if err := s.Store.SavePosition(r.Context(), p); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

@@ -57,3 +57,22 @@ func TestMappingRoundTrip(t *testing.T) {
 		t.Fatalf("got %+v, %v", got, err)
 	}
 }
+
+func TestPositions(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+	if p, err := s.Position(ctx, 1, 2); err != nil || p != nil {
+		t.Fatalf("empty = %+v, %v", p, err)
+	}
+	s.SavePosition(ctx, Position{AnilistID: 1, Episode: 2, Position: 100, Duration: 1400})
+	s.SavePosition(ctx, Position{AnilistID: 1, Episode: 2, Position: 300, Duration: 1400})
+	p, _ := s.Position(ctx, 1, 2)
+	if p == nil || p.Position != 300 {
+		t.Fatalf("position = %+v; want 300", p)
+	}
+	s.SavePosition(ctx, Position{AnilistID: 9, Episode: 1, Position: 5, Duration: 60})
+	latest, err := s.LatestPositions(ctx)
+	if err != nil || len(latest) != 2 || latest[1].Episode != 2 || latest[9].Position != 5 {
+		t.Fatalf("latest = %+v, %v", latest, err)
+	}
+}

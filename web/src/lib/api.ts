@@ -24,7 +24,9 @@ export type Media = {
   mediaListEntry: ListEntry | null
 }
 
-export type ListItem = ListEntry & { media: Media }
+export type Position = { episode: number; position: number; duration: number; updatedAt: number }
+
+export type ListItem = ListEntry & { media: Media; resume: Position | null }
 
 export type Viewer = { id: number; name: string; avatar: { medium: string } }
 
@@ -49,7 +51,7 @@ export type AnimeDetail = {
 
 export type Stream = { url: string; type: string; headers: Record<string, string>; subLang: string; server: string }
 
-export type StreamResult = { episode: number; title: string; streams: Stream[] }
+export type StreamResult = { episode: number; title: string; streams: Stream[]; resume: Position | null }
 
 export class ApiError extends Error {
   status: number
@@ -59,12 +61,14 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function request<T>(method: string, path: string, body?: unknown, keepalive = false): Promise<T> {
   const res = await fetch(path, {
     method,
+    keepalive,
     headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
+  if (res.status === 204) return undefined as T
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new ApiError(res.status, data.error ?? res.statusText)
   return data as T
@@ -82,6 +86,9 @@ export const api = {
   saveMapping: (id: number, providerId: string, epOffset: number) =>
     request<Mapping>('PUT', `/api/anime/${id}/mapping`, { providerId, epOffset }),
   stream: (id: number, ep: number) => request<StreamResult>('GET', `/api/anime/${id}/episodes/${ep}/stream`),
+  // keepalive lets the last save finish while the page is closing.
+  savePosition: (id: number, ep: number, position: number, duration: number, keepalive = false) =>
+    request<void>('PUT', `/api/anime/${id}/episodes/${ep}/position`, { position, duration }, keepalive),
   progress: (id: number, episode: number) =>
     request<{ queued: boolean }>('POST', `/api/anime/${id}/progress`, { episode }),
 }
@@ -103,4 +110,19 @@ export function plainText(s: string): string {
     .replace(/<[^>]+>/g, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
+}
+
+// Whether a saved position is worth resuming: past the first seconds and
+// before the end credits.
+export function resumable(p: Position | null | undefined): p is Position {
+  return !!p && p.position > 20 && p.position < p.duration * 0.92
+}
+
+// 754 -> "12:34", 3754 -> "1:02:34"
+export function clock(seconds: number): string {
+  const s = Math.floor(seconds)
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const ss = String(s % 60).padStart(2, '0')
+  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`
 }

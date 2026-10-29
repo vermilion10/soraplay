@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Hls from 'hls.js'
-import { api, titleOf } from '../lib/api'
+import { api, clock, resumable, titleOf, type Position } from '../lib/api'
 import { Empty, ErrorBox, Loading } from '../components/States'
 
 // Share of an episode that counts as watched. Past this point the end credits
@@ -53,6 +53,7 @@ export default function Watch() {
             ep={ep}
             nextEp={next}
             syncProgress={!!me.data?.user}
+            resume={stream.data.resume}
             onExpired={() => stream.refetch()}
           />
         )}
@@ -100,6 +101,7 @@ function Player({
   ep,
   nextEp,
   syncProgress,
+  resume,
   onExpired,
 }: {
   src: string
@@ -107,14 +109,21 @@ function Player({
   ep: number
   nextEp?: number
   syncProgress: boolean
+  resume: Position | null
   onExpired: () => void
 }) {
   const video = useRef<HTMLVideoElement>(null)
   const sent = useRef(false)
+  const lastSaved = useRef(0)
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
+  const [resumedAt, setResumedAt] = useState<number | null>(null)
   const qc = useQueryClient()
   const navigate = useNavigate()
+  // Held in a ref: the parent passes a new function on every render, and the
+  // player must not be rebuilt each time.
+  const expired = useRef(onExpired)
+  expired.current = onExpired
 
   useEffect(() => {
     const v = video.current
@@ -124,7 +133,7 @@ function Player({
       hls.on(Hls.Events.ERROR, (_, d) => {
         if (!d.fatal) return
         if (d.type === Hls.ErrorTypes.NETWORK_ERROR && d.response?.code === 403) {
-          onExpired() // signed link ran out; fetch a fresh one
+          expired.current() // signed link ran out; fetch a fresh one
         } else {
           setError(`Playback failed (${d.details}).`)
           hls.destroy()
@@ -135,7 +144,7 @@ function Player({
       return () => hls.destroy()
     }
     v.src = src // Safari and iOS play HLS natively
-  }, [src, onExpired])
+  }, [src])
 
   useEffect(() => {
     const v = video.current
@@ -143,9 +152,38 @@ function Player({
     v.play().catch(() => {}) // autoplay can be refused; the controls are there
   }, [src])
 
+  // Saves where playback is, so this episode resumes there on any device.
+  function savePosition(keepalive = false) {
+    const v = video.current
+    if (!v || !v.duration || v.currentTime < 1) return
+    lastSaved.current = v.currentTime
+    api.savePosition(animeId, ep, v.currentTime, v.duration, keepalive).catch(() => {})
+  }
+  const saveRef = useRef(savePosition)
+  saveRef.current = savePosition
+
+  useEffect(() => {
+    const onHide = () => saveRef.current(true)
+    window.addEventListener('pagehide', onHide)
+    return () => {
+      window.removeEventListener('pagehide', onHide)
+      saveRef.current(true) // leaving the player, e.g. for the next episode
+    }
+  }, [])
+
+  function onLoaded() {
+    const v = video.current
+    if (!v || !resumable(resume)) return
+    v.currentTime = resume.position
+    lastSaved.current = resume.position
+    setResumedAt(resume.position)
+  }
+
   function onTime() {
     const v = video.current
-    if (!v || sent.current || !v.duration || v.currentTime / v.duration < WATCHED_AT) return
+    if (!v) return
+    if (Math.abs(v.currentTime - lastSaved.current) >= 10) savePosition()
+    if (sent.current || !v.duration || v.currentTime / v.duration < WATCHED_AT) return
     sent.current = true
     if (!syncProgress) {
       setStatus('Log in with AniList to mark episodes as watched.')
@@ -215,9 +253,27 @@ function Player({
           ref={video}
           controls
           playsInline
+          onLoadedMetadata={onLoaded}
           onTimeUpdate={onTime}
+          onPause={() => savePosition()}
           className="aspect-video w-full bg-black"
         />
+      )}
+      {resumedAt !== null && (
+        <div className="flex flex-wrap items-center gap-x-3 px-4 py-1 text-sm text-muted sm:px-3">
+          Resumed at {clock(resumedAt)}
+          <button
+            type="button"
+            onClick={() => {
+              const v = video.current
+              if (v) v.currentTime = 0
+              setResumedAt(null)
+            }}
+            className="min-h-11 text-ink underline"
+          >
+            Start over
+          </button>
+        </div>
       )}
       <p role="status" aria-live="polite" className="sr-only sm:not-sr-only sm:px-3 sm:py-1 sm:text-xs sm:text-muted">
         {status}

@@ -66,6 +66,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/anime/{id}/mapping", s.deleteMapping)
 	mux.HandleFunc("GET /api/anime/{id}/episodes/{ep}/stream", s.stream)
 	mux.HandleFunc("POST /api/anime/{id}/progress", s.progress)
+	mux.HandleFunc("PUT /api/anime/{id}/episodes/{ep}/position", s.savePosition)
 	mux.HandleFunc("GET /api/relay", s.relay)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "no such endpoint")
@@ -233,10 +234,25 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 		writeAniListErr(w, err)
 		return
 	}
-	if items == nil {
-		items = []anilist.ListItem{}
+	// Attach where each show was last left off, for "Resume" on the home page.
+	latest, err := s.Store.LatestPositions(r.Context())
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
 	}
-	writeJSON(w, http.StatusOK, items)
+	type listItemJSON struct {
+		anilist.ListItem
+		Resume *store.Position `json:"resume"`
+	}
+	out := make([]listItemJSON, 0, len(items))
+	for _, it := range items {
+		li := listItemJSON{ListItem: it}
+		if p, ok := latest[it.Media.ID]; ok {
+			li.Resume = &p
+		}
+		out = append(out, li)
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) search(w http.ResponseWriter, r *http.Request) {
