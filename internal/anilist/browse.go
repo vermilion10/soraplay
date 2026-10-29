@@ -114,7 +114,7 @@ const smallMediaFields = `id type format status episodes seasonYear isAdult
 	title { romaji english native userPreferred } coverImage { large color }`
 
 // Extras returns an anime's studios, related anime and recommendations.
-// Related manga and adult recommendations are left out.
+// Related manga and music videos, and adult recommendations, are left out.
 func (c *Client) Extras(ctx context.Context, id int) (*Extras, error) {
 	key := fmt.Sprintf("extras/%d", id)
 	if v, ok := c.page(key); ok {
@@ -157,7 +157,7 @@ func (c *Client) Extras(ctx context.Context, id int) (*Extras, error) {
 		ex.Studios = append(ex.Studios, s.Name)
 	}
 	for _, e := range res.Media.Relations.Edges {
-		if e.Node.Type == "ANIME" {
+		if e.Node.Type == "ANIME" && e.Node.Format != "MUSIC" {
 			ex.Relations = append(ex.Relations, Relation{Type: e.RelationType, Media: e.Node.Media})
 		}
 	}

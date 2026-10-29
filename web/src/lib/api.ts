@@ -2,7 +2,24 @@
 
 export type Title = { romaji: string; english: string; native: string; userPreferred: string }
 
-export type ListEntry = { progress: number; status: string; updatedAt: number }
+// Zero parts are unknown.
+export type FuzzyDate = { year: number; month: number; day: number }
+
+export type ListStatus = 'CURRENT' | 'PLANNING' | 'COMPLETED' | 'PAUSED' | 'DROPPED' | 'REPEATING'
+
+export type ListEntry = {
+  id: number
+  progress: number
+  status: ListStatus
+  updatedAt: number
+  score: number // in the viewer's score format
+  repeat: number
+  startedAt: FuzzyDate
+  completedAt: FuzzyDate
+}
+
+// Fields left out are not changed. A date of all zeros clears it.
+export type EntryUpdate = Partial<Pick<ListEntry, 'status' | 'progress' | 'score' | 'repeat' | 'startedAt' | 'completedAt'>>
 
 export type Media = {
   id: number
@@ -35,7 +52,14 @@ export type ListItem = ListEntry & {
   arrivedAt: number | null
 }
 
-export type Viewer = { id: number; name: string; avatar: { medium: string } }
+export type ScoreFormat = 'POINT_100' | 'POINT_10_DECIMAL' | 'POINT_10' | 'POINT_5' | 'POINT_3'
+
+export type Viewer = {
+  id: number
+  name: string
+  avatar: { medium: string }
+  mediaListOptions: { scoreFormat: ScoreFormat | '' }
+}
 
 export type Me = { user: Viewer | null; configured: boolean }
 
@@ -61,6 +85,28 @@ export type Stream = { url: string; type: string; headers: Record<string, string
 export type Interval = { start: number; end: number }
 
 export type SkipTimes = { op: Interval | null; ed: Interval | null }
+
+export type Airing = { episode: number; airingAt: number; media: Media }
+
+export type Season = 'WINTER' | 'SPRING' | 'SUMMER' | 'FALL'
+
+export type SeasonPage = { season: Season; year: number; media: Media[]; hasNext: boolean }
+
+export type SeasonParams = { season: Season; year: number; sort: string; format: string; page: number }
+
+export type Relation = { type: string; media: Media }
+
+export type Extras = { source: string; studios: string[]; relations: Relation[]; recommendations: Media[] }
+
+export type SavedEpisode = { media: Media; episode: number; bytes: number; savedAt: number; usedAt: number }
+
+export type SavedInfo = {
+  enabled: boolean
+  maxBytes: number
+  ahead: number
+  usedBytes?: number
+  items: SavedEpisode[]
+}
 
 export type StreamResult = { episode: number; title: string; streams: Stream[]; resume: Position | null }
 
@@ -89,7 +135,14 @@ export const api = {
   me: () => request<Me>('GET', '/api/me'),
   logout: () => request<{ ok: boolean }>('POST', '/api/logout', {}),
   list: () => request<ListItem[]>('GET', '/api/list'),
-  seasonal: () => request<{ season: string; year: number; media: Media[] }>('GET', '/api/seasonal'),
+  fullList: () => request<ListItem[]>('GET', `/api/list?status=${ALL_STATUSES.join(',')}`),
+  seasonal: (p?: Partial<SeasonParams>) =>
+    request<SeasonPage>('GET', `/api/seasonal?${new URLSearchParams(clean(p ?? {}))}`),
+  schedule: (from: number, to: number) => request<Airing[]>('GET', `/api/schedule?from=${from}&to=${to}`),
+  extras: (id: number) => request<Extras>('GET', `/api/anime/${id}/extras`),
+  saveEntry: (id: number, u: EntryUpdate) => request<ListEntry>('PUT', `/api/anime/${id}/entry`, u),
+  deleteEntry: (id: number) => request<void>('DELETE', `/api/anime/${id}/entry`, {}),
+  saved: () => request<SavedInfo>('GET', '/api/saved'),
   search: (q: string) => request<Media[]>('GET', `/api/search?q=${encodeURIComponent(q)}`),
   anime: (id: number) => request<AnimeDetail>('GET', `/api/anime/${id}`),
   candidates: (id: number, q: string) =>
@@ -104,6 +157,14 @@ export const api = {
     request<SkipTimes>('GET', `/api/anime/${id}/episodes/${ep}/skip?length=${Math.round(length)}`),
   progress: (id: number, episode: number) =>
     request<{ queued: boolean }>('POST', `/api/anime/${id}/progress`, { episode }),
+}
+
+export const ALL_STATUSES: ListStatus[] = ['CURRENT', 'REPEATING', 'PLANNING', 'COMPLETED', 'PAUSED', 'DROPPED']
+
+function clean(p: Record<string, unknown>): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [k, v] of Object.entries(p)) if (v !== undefined && v !== '') out[k] = String(v)
+  return out
 }
 
 export function titleOf(m: Media): string {

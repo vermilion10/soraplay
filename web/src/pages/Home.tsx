@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api, clock, nextEpisode, resumable, titleOf, type ListItem, type Me } from '../lib/api'
 import { PosterGrid } from '../components/PosterGrid'
 import { Empty, ErrorBox, Loading } from '../components/States'
+import { seasonName } from './Seasons'
 
 export default function Home() {
   const me = useQuery({ queryKey: ['me'], queryFn: api.me })
@@ -167,20 +168,20 @@ function airsIn(unix: number): string {
 }
 
 function Seasonal() {
-  const q = useQuery({ queryKey: ['seasonal'], queryFn: api.seasonal, staleTime: 3_600_000 })
+  const q = useQuery({ queryKey: ['seasonal'], queryFn: () => api.seasonal(), staleTime: 3_600_000 })
+  const name = q.data ? seasonName(q.data.season, q.data.year) : 'This season'
   return (
     <section className="mt-10">
-      <h2 className="mb-3 font-display text-xl font-semibold text-muted">
-        {q.data ? `${cap(q.data.season)} ${q.data.year}` : 'This season'}
-      </h2>
+      <div className="mb-3 flex items-baseline justify-between gap-2">
+        <h2 className="font-display text-xl font-semibold text-muted">{name}</h2>
+        <Link to="/seasons" className="min-h-11 py-2 text-sm underline">
+          All of {name}
+        </Link>
+      </div>
       {q.isPending && <Loading what="this season's anime" />}
       {q.isError && <ErrorBox title="Could not load this season from AniList." error={q.error} onRetry={() => q.refetch()} />}
       {q.data && q.data.media.length === 0 && <Empty>AniList has no anime listed for this season yet.</Empty>}
-      {q.data && q.data.media.length > 0 && <PosterGrid items={q.data.media.map((media) => ({ media }))} />}
+      {q.data && q.data.media.length > 0 && <PosterGrid items={q.data.media.slice(0, 12).map((media) => ({ media }))} />}
     </section>
   )
-}
-
-function cap(s: string) {
-  return s.charAt(0) + s.slice(1).toLowerCase()
 }

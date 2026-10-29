@@ -1,8 +1,11 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
-import { api, plainText, titleOf, type AnimeDetail } from '../lib/api'
+import { api, plainText, titleOf, type AnimeDetail, type Media, type Relation } from '../lib/api'
+import { formatLabel, formatScore, STATUS_LABEL, useMe } from '../lib/list'
 import { SourcePicker } from '../components/SourcePicker'
+import { EntryEditor } from '../components/EntryEditor'
+import { PosterGrid } from '../components/PosterGrid'
 import { Empty, ErrorBox, Loading } from '../components/States'
 
 export default function Anime() {
@@ -20,6 +23,10 @@ function Detail({ data }: { data: AnimeDetail }) {
   const src = data.source.name
   const [picker, setPicker] = useState(false)
   const [more, setMore] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const me = useMe()
+  const user = me.data?.user
+  const entry = m.mediaListEntry
   const progress = m.mediaListEntry?.progress ?? 0
   const available = new Set(episodes.map((e) => e.number))
   const next = episodes.find((e) => e.number > progress)?.number ?? episodes[0]?.number
@@ -51,10 +58,16 @@ function Detail({ data }: { data: AnimeDetail }) {
               <p className="mt-1 text-muted">{m.title.english}</p>
             )}
             <p className="mt-2 text-sm text-muted">{meta.join(' · ')}</p>
-            {m.mediaListEntry && (
+            {entry && (
               <p className="mt-1 text-sm">
-                On your list: {progress} / {m.episodes || '?'} watched
+                {STATUS_LABEL[entry.status]} · {progress} / {m.episodes || '?'} watched
+                {entry.score > 0 && ` · Score ${formatScore(entry.score, user?.mediaListOptions.scoreFormat ?? '')}`}
               </p>
+            )}
+            {user && (
+              <button type="button" onClick={() => setEditing(true)} className="min-h-11 text-sm underline">
+                {entry ? 'Edit list entry' : 'Add to list'}
+              </button>
             )}
             {next !== undefined && (
               <Link
@@ -148,6 +161,8 @@ function Detail({ data }: { data: AnimeDetail }) {
         )}
       </section>
 
+      <More id={m.id} />
+
       <SourcePicker
         animeId={m.id}
         defaultQuery={m.title.romaji}
@@ -156,6 +171,50 @@ function Detail({ data }: { data: AnimeDetail }) {
         open={picker}
         onClose={() => setPicker(false)}
       />
+      <EntryEditor media={m} entry={entry} open={editing} onClose={() => setEditing(false)} />
     </article>
+  )
+}
+
+// Order for related anime: what to watch before and after first.
+const RELATION_ORDER = ['PREQUEL', 'SEQUEL', 'PARENT', 'SIDE_STORY', 'SPIN_OFF', 'ALTERNATIVE', 'SUMMARY', 'COMPILATION', 'CONTAINS', 'SOURCE', 'CHARACTER', 'OTHER']
+
+function relationLabel(t: string): string {
+  return t.charAt(0) + t.slice(1).toLowerCase().replace('_', ' ')
+}
+
+// Studio, source material, related anime and recommendations, loaded after
+// the page itself so episodes show first.
+function More({ id }: { id: number }) {
+  const q = useQuery({ queryKey: ['extras', id], queryFn: () => api.extras(id), staleTime: 3_600_000 })
+  if (!q.data) return null
+  const ex = q.data
+  const rank = (r: Relation) => {
+    const i = RELATION_ORDER.indexOf(r.type)
+    return i < 0 ? RELATION_ORDER.length : i
+  }
+  const relations = [...ex.relations].sort((a, b) => rank(a) - rank(b))
+  const facts = [
+    ex.studios.length ? `Studio: ${ex.studios.join(', ')}` : null,
+    ex.source ? `Source: ${relationLabel(ex.source)}` : null,
+  ].filter(Boolean)
+  const note = (m: Media) => [formatLabel(m.format), m.seasonYear].filter(Boolean).join(' · ')
+
+  return (
+    <>
+      {facts.length > 0 && <p className="mt-6 text-sm text-muted">{facts.join(' · ')}</p>}
+      {relations.length > 0 && (
+        <section className="mt-8">
+          <h2 className="mb-3 font-display text-2xl font-semibold">Related</h2>
+          <PosterGrid items={relations.map((r) => ({ media: r.media, note: `${relationLabel(r.type)} · ${note(r.media)}` }))} />
+        </section>
+      )}
+      {ex.recommendations.length > 0 && (
+        <section className="mt-8">
+          <h2 className="mb-3 font-display text-2xl font-semibold text-muted">Recommended by AniList users</h2>
+          <PosterGrid items={ex.recommendations.map((m) => ({ media: m, note: note(m) }))} />
+        </section>
+      )}
+    </>
   )
 }
