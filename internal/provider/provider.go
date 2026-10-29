@@ -29,11 +29,11 @@ type Episode struct {
 
 // Stream is a resolved, playable source for one episode.
 type Stream struct {
-	URL     string            // HLS master playlist or direct video file
-	Type    string            // "hls" or "mp4"
-	Headers map[string]string // headers the CDN expects (Referer, Origin, ...)
-	SubLang string            // e.g. "id-hardsub"
-	Server  string            // human-readable server name
+	URL     string            `json:"url"`     // HLS master playlist or direct video file
+	Type    string            `json:"type"`    // "hls" or "mp4"
+	Headers map[string]string `json:"headers"` // headers the CDN expects (Referer, Origin, ...)
+	SubLang string            `json:"subLang"` // e.g. "id-hardsub"
+	Server  string            `json:"server"`  // human-readable server name
 }
 
 // Provider is a site that can be searched and streamed from.
