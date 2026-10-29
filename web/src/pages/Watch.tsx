@@ -61,8 +61,8 @@ export default function Watch() {
       <div className="mt-4 flex flex-wrap items-end gap-x-4 gap-y-2">
         <div className="mr-auto min-w-0">
           {m ? (
-            <Link to={`/anime/${id}`} className="block truncate text-muted hover:text-ink">
-              {titleOf(m)}
+            <Link to={`/anime/${id}`} className="flex min-h-11 items-center text-muted hover:text-ink">
+              <span className="truncate">{titleOf(m)}</span>
             </Link>
           ) : (
             <span className="text-muted">{anime.isError ? 'Unknown anime' : 'Loading…'}</span>
@@ -88,7 +88,7 @@ export default function Watch() {
         </p>
       )}
       <p className="mt-4 text-xs text-muted">
-        Keys: Space play/pause · ← → 10 seconds · F fullscreen{next !== undefined && ' · N next episode'}
+        Keys: Space play/pause · ← → seek · F fullscreen{next !== undefined && ' · N next episode'}
       </p>
     </article>
   )
@@ -170,8 +170,12 @@ function Player({
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const v = video.current
-      const t = e.target as HTMLElement
-      if (!v || e.ctrlKey || e.metaKey || e.altKey || t.closest('input, textarea, button, a, dialog')) return
+      const t = e.target instanceof Element ? e.target : null
+      if (!v || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return
+      if (t?.closest('input, textarea, button, a, dialog')) return
+      // A focused <video> already handles Space and the arrows natively;
+      // handling them too would undo the toggle or double the seek.
+      if (t === v && [' ', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return
       switch (e.key) {
         case ' ':
         case 'k':
