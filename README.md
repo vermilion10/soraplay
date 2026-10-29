@@ -1,4 +1,4 @@
-# nonton
+# SoraPlay
 
 A self-hosted web app for watching anime with Indonesian subtitles, synced with your AniList account.
 

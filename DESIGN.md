@@ -8,4 +8,4 @@ Direction chosen by the owner: **dark, poster-led**.
 - **Typography:** titles and episode numbers in Barlow Condensed, a narrow face like poster and marquee lettering that also fits long romaji titles on small cards. Body text uses the system UI font, which renders natively on phones and needs no download.
 - **Motif:** the episode number set large in the condensed face ("EP 7"), like a ticket stub, on the continue card and the player.
 - **Dial:** ENERGY 2 / RHYTHM 2 / MOTION 1. Hover and focus states only, no entrance animations.
-- **Name:** shown as a text wordmark only, no logo.
+- **Name:** SoraPlay, shown as a text wordmark only, no logo.

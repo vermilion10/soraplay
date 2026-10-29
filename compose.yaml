@@ -1,8 +1,8 @@
 services:
-  nonton:
+  soraplay:
     build: .
-    image: nonton:latest
-    container_name: nonton
+    image: soraplay:latest
+    container_name: soraplay
     restart: unless-stopped
     env_file: .env
     environment:
