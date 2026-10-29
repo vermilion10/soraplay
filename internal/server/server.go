@@ -25,8 +25,10 @@ type Server struct {
 	Store    *store.Store
 	AniList  *anilist.Client
 	Provider provider.Provider
-	Progress *progress.Worker
-	Static   fs.FS // built frontend; index.html is served for unknown paths
+	// AdultProvider serves AniList entries marked adult; nil sends them to Provider.
+	AdultProvider provider.Provider
+	Progress      *progress.Worker
+	Static        fs.FS // built frontend; index.html is served for unknown paths
 
 	mu        sync.Mutex
 	animeMemo map[string]memo // provider anime pages, keyed by provider ID

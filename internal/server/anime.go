@@ -23,6 +23,11 @@ type mappingJSON struct {
 	Manual     bool    `json:"manual"`
 }
 
+type sourceJSON struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
 type episodeJSON struct {
 	Number float64 `json:"number"` // AniList numbering
 	Title  string  `json:"title"`
@@ -36,27 +41,53 @@ type candidateJSON struct {
 	Score    float64 `json:"score"`
 }
 
-func (s *Server) providerAnime(ctx context.Context, id string) (*provider.Anime, error) {
+// providerFor picks the source for an anime: adult entries come from the
+// adult source when one is configured, everything else from the main one.
+func (s *Server) providerFor(m *anilist.Media) provider.Provider {
+	if m.IsAdult && s.AdultProvider != nil {
+		return s.AdultProvider
+	}
+	return s.Provider
+}
+
+// animeAndProvider loads the AniList entry in the request path and its source.
+func (s *Server) animeAndProvider(w http.ResponseWriter, r *http.Request) (*anilist.Media, provider.Provider, bool) {
+	id, ok := pathID(r)
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "bad anime id")
+		return nil, nil, false
+	}
+	token, _ := s.session(r.Context())
+	m, err := s.AniList.Media(r.Context(), token, id)
+	if err != nil {
+		writeAniListErr(w, err)
+		return nil, nil, false
+	}
+	return m, s.providerFor(m), true
+}
+
+func (s *Server) providerAnime(ctx context.Context, p provider.Provider, id string) (*provider.Anime, error) {
+	key := p.Name() + "/" + id
 	s.mu.Lock()
-	m, ok := s.animeMemo[id]
+	m, ok := s.animeMemo[key]
 	s.mu.Unlock()
 	if ok && time.Since(m.at) < animeTTL {
 		return m.a, nil
 	}
-	a, err := s.Provider.Anime(ctx, id)
+	a, err := p.Anime(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 	s.mu.Lock()
-	s.animeMemo[id] = memo{a: a, at: time.Now()}
+	s.animeMemo[key] = memo{a: a, at: time.Now()}
 	s.mu.Unlock()
 	return a, nil
 }
 
-// mapping returns the stored mapping for m, matching automatically the first
-// time. When there is no confident match it returns nil and the candidates.
-func (s *Server) mapping(ctx context.Context, m *anilist.Media) (*store.Mapping, []match.Candidate, error) {
-	mp, err := s.Store.Mapping(ctx, m.ID, s.Provider.Name())
+// mapping returns the stored mapping for m on p, matching automatically the
+// first time. When there is no confident match it returns nil and the candidates.
+func (s *Server) mapping(ctx context.Context, p provider.Provider, m *anilist.Media) (*store.Mapping, []match.Candidate, error) {
+	mp, err := s.Store.Mapping(ctx, m.ID, p.Name())
 	if err != nil || mp != nil {
 		return mp, nil, err
 	}
@@ -66,12 +97,12 @@ func (s *Server) mapping(ctx context.Context, m *anilist.Media) (*store.Mapping,
 	if missed && time.Since(missAt) < missTTL {
 		return nil, nil, nil
 	}
-	cands, err := match.Find(ctx, s.Provider, *m)
+	cands, err := match.Find(ctx, p, *m)
 	if err != nil {
 		return nil, nil, err
 	}
 	if len(cands) > 0 && cands[0].Score >= match.Threshold {
-		mp = &store.Mapping{AnilistID: m.ID, Provider: s.Provider.Name(), ProviderID: cands[0].ID, Title: cands[0].Title}
+		mp = &store.Mapping{AnilistID: m.ID, Provider: p.Name(), ProviderID: cands[0].ID, Title: cands[0].Title}
 		if err := s.Store.SaveMapping(ctx, *mp); err != nil {
 			return nil, nil, err
 		}
@@ -84,20 +115,18 @@ func (s *Server) mapping(ctx context.Context, m *anilist.Media) (*store.Mapping,
 }
 
 func (s *Server) anime(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(r)
+	m, p, ok := s.animeAndProvider(w, r)
 	if !ok {
-		writeErr(w, http.StatusBadRequest, "bad anime id")
 		return
 	}
 	ctx := r.Context()
-	token, _ := s.session(ctx)
-	m, err := s.AniList.Media(ctx, token, id)
-	if err != nil {
-		writeAniListErr(w, err)
-		return
+	resp := map[string]any{
+		"media":    m,
+		"source":   sourceJSON{p.Name(), p.Label()},
+		"mapping":  nil,
+		"episodes": []episodeJSON{},
 	}
-	resp := map[string]any{"media": m, "mapping": nil, "episodes": []episodeJSON{}}
-	mp, cands, err := s.mapping(ctx, m)
+	mp, cands, err := s.mapping(ctx, p, m)
 	switch {
 	case err != nil:
 		resp["sourceError"] = err.Error()
@@ -105,7 +134,7 @@ func (s *Server) anime(w http.ResponseWriter, r *http.Request) {
 		resp["candidates"] = candidatesJSON(cands, 5)
 	default:
 		resp["mapping"] = mappingJSON{mp.ProviderID, mp.Title, mp.EpOffset, mp.Manual}
-		pa, err := s.providerAnime(ctx, mp.ProviderID)
+		pa, err := s.providerAnime(ctx, p, mp.ProviderID)
 		if err != nil {
 			resp["sourceError"] = err.Error()
 			break
@@ -134,24 +163,18 @@ func candidatesJSON(cs []match.Candidate, limit int) []candidateJSON {
 	return out
 }
 
-// candidates lists provider shows for picking a mapping by hand. With ?q= it
+// candidates lists source shows for picking a mapping by hand. With ?q= it
 // searches that text; without it, it reruns the automatic search.
 func (s *Server) candidates(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(r)
+	m, p, ok := s.animeAndProvider(w, r)
 	if !ok {
-		writeErr(w, http.StatusBadRequest, "bad anime id")
 		return
 	}
 	ctx := r.Context()
-	token, _ := s.session(ctx)
-	m, err := s.AniList.Media(ctx, token, id)
-	if err != nil {
-		writeAniListErr(w, err)
-		return
-	}
 	var cands []match.Candidate
+	var err error
 	if q := strings.TrimSpace(r.URL.Query().Get("q")); q != "" {
-		rs, err := s.Provider.Search(ctx, q)
+		rs, err := p.Search(ctx, q)
 		if err != nil {
 			writeErr(w, http.StatusBadGateway, err.Error())
 			return
@@ -160,7 +183,7 @@ func (s *Server) candidates(w http.ResponseWriter, r *http.Request) {
 			cands = append(cands, match.Candidate{Result: res, Score: match.Score(*m, res)})
 		}
 		sort.SliceStable(cands, func(i, j int) bool { return cands[i].Score > cands[j].Score })
-	} else if cands, err = match.Find(ctx, s.Provider, *m); err != nil {
+	} else if cands, err = match.Find(ctx, p, *m); err != nil {
 		writeErr(w, http.StatusBadGateway, err.Error())
 		return
 	}
@@ -168,9 +191,8 @@ func (s *Server) candidates(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) saveMapping(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(r)
+	m, p, ok := s.animeAndProvider(w, r)
 	if !ok {
-		writeErr(w, http.StatusBadRequest, "bad anime id")
 		return
 	}
 	var body struct {
@@ -181,49 +203,51 @@ func (s *Server) saveMapping(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "providerId is required")
 		return
 	}
-	pa, err := s.providerAnime(r.Context(), body.ProviderID)
+	pa, err := s.providerAnime(r.Context(), p, body.ProviderID)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "cannot load that show: "+err.Error())
 		return
 	}
-	mp := store.Mapping{AnilistID: id, Provider: s.Provider.Name(), ProviderID: body.ProviderID,
+	mp := store.Mapping{AnilistID: m.ID, Provider: p.Name(), ProviderID: body.ProviderID,
 		Title: pa.Title, EpOffset: body.EpOffset, Manual: true}
 	if err := s.Store.SaveMapping(r.Context(), mp); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	s.mu.Lock()
-	delete(s.missMemo, id)
+	delete(s.missMemo, m.ID)
 	s.mu.Unlock()
 	writeJSON(w, http.StatusOK, mappingJSON{mp.ProviderID, mp.Title, mp.EpOffset, mp.Manual})
 }
 
 // deleteMapping forgets the mapping so the next visit matches again.
 func (s *Server) deleteMapping(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(r)
+	m, p, ok := s.animeAndProvider(w, r)
 	if !ok {
-		writeErr(w, http.StatusBadRequest, "bad anime id")
 		return
 	}
-	if err := s.Store.DeleteMapping(r.Context(), id, s.Provider.Name()); err != nil {
+	if err := s.Store.DeleteMapping(r.Context(), m.ID, p.Name()); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	s.mu.Lock()
-	delete(s.missMemo, id)
+	delete(s.missMemo, m.ID)
 	s.mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(r)
 	ep, err := strconv.ParseFloat(r.PathValue("ep"), 64)
-	if !ok || err != nil {
-		writeErr(w, http.StatusBadRequest, "bad anime id or episode")
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "bad episode number")
+		return
+	}
+	m, p, ok := s.animeAndProvider(w, r)
+	if !ok {
 		return
 	}
 	ctx := r.Context()
-	mp, err := s.Store.Mapping(ctx, id, s.Provider.Name())
+	mp, err := s.Store.Mapping(ctx, m.ID, p.Name())
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -232,7 +256,7 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "this anime is not linked to a source yet")
 		return
 	}
-	pa, err := s.providerAnime(ctx, mp.ProviderID)
+	pa, err := s.providerAnime(ctx, p, mp.ProviderID)
 	if err != nil {
 		writeErr(w, http.StatusBadGateway, err.Error())
 		return
@@ -247,7 +271,7 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "episode is not on the source yet")
 		return
 	}
-	streams, err := s.Provider.Streams(ctx, *pe)
+	streams, err := p.Streams(ctx, *pe)
 	if err != nil {
 		writeErr(w, http.StatusBadGateway, err.Error())
 		return

@@ -17,6 +17,8 @@ import (
 	"github.com/vermilion10/nonton/internal/config"
 	"github.com/vermilion10/nonton/internal/httpc"
 	"github.com/vermilion10/nonton/internal/progress"
+	"github.com/vermilion10/nonton/internal/provider"
+	"github.com/vermilion10/nonton/internal/provider/sourcee"
 	"github.com/vermilion10/nonton/internal/provider/sourcea"
 	"github.com/vermilion10/nonton/internal/server"
 	"github.com/vermilion10/nonton/internal/store"
@@ -35,14 +37,19 @@ func main() {
 	defer st.Close()
 
 	al := anilist.New()
+	var adult provider.Provider
+	if cfg.SourceEBase != "off" {
+		adult = sourcee.New(cfg.SourceEBase, httpc.New())
+	}
 	worker := progress.NewWorker(st, al)
 	srv := &server.Server{
-		Cfg:      cfg,
-		Store:    st,
-		AniList:  al,
-		Provider: sourcea.New(cfg.SourceABase, httpc.New()),
-		Progress: worker,
-		Static:   web.Dist(),
+		Cfg:           cfg,
+		Store:         st,
+		AniList:       al,
+		Provider:      sourcea.New(cfg.SourceABase, httpc.New()),
+		AdultProvider: adult,
+		Progress:      worker,
+		Static:        web.Dist(),
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

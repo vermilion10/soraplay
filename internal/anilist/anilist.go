@@ -46,6 +46,7 @@ type Media struct {
 	Description       string   `json:"description"`
 	Genres            []string `json:"genres"`
 	AverageScore      int      `json:"averageScore"`
+	IsAdult           bool     `json:"isAdult"`
 	NextAiringEpisode *struct {
 		Episode  int   `json:"episode"`
 		AiringAt int64 `json:"airingAt"`
@@ -80,7 +81,7 @@ const mediaFields = `
 	coverImage { large color }
 	bannerImage
 	description(asHtml: false)
-	genres averageScore
+	genres averageScore isAdult
 	nextAiringEpisode { episode airingAt }`
 
 // Client talks to AniList. Token may be empty for public queries.

@@ -15,6 +15,7 @@ type Config struct {
 	ClientID      string // AniList API client
 	ClientSecret  string
 	SourceABase string
+	SourceEBase   string // source for adult entries; "off" disables it
 }
 
 func Load() Config {
@@ -26,6 +27,7 @@ func Load() Config {
 		ClientID:      env("ANILIST_CLIENT_ID", ""),
 		ClientSecret:  env("ANILIST_CLIENT_SECRET", ""),
 		SourceABase: env("SOURCE_A_BASE", "https://source-a.example"),
+		SourceEBase:   env("SOURCE_E_BASE", "https://source-e.example"),
 	}
 }
 

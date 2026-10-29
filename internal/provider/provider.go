@@ -38,7 +38,8 @@ type Stream struct {
 
 // Provider is a site that can be searched and streamed from.
 type Provider interface {
-	Name() string
+	Name() string  // stable ID, stored with mappings
+	Label() string // display name
 	Search(ctx context.Context, query string) ([]Result, error)
 	Anime(ctx context.Context, id string) (*Anime, error)
 	Streams(ctx context.Context, ep Episode) ([]Stream, error)
