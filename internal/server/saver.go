@@ -103,6 +103,7 @@ func (s *Server) Save(ctx context.Context) {
 func (s *Server) saveOnce(ctx context.Context) error {
 	token, v := s.session(ctx)
 	if v == nil {
+		log.Printf("saver: not logged in, skipping")
 		return nil
 	}
 	items, err := s.AniList.List(ctx, token, v.ID, []string{"CURRENT", "REPEATING"})
@@ -121,10 +122,15 @@ func (s *Server) saveOnce(ctx context.Context) error {
 	}
 	var used int64
 	have := map[wantKey]bool{}
+	deleted, added := 0, 0
+	defer func() {
+		log.Printf("saver: %d wanted, %d kept, %d saved, %d deleted", len(want), len(have), added, deleted)
+	}()
 	for _, d := range saved {
 		k := wantKey{d.AnilistID, d.Episode}
 		if _, ok := want[k]; !ok {
 			s.deleteSaved(ctx, d.AnilistID, d.Episode)
+			deleted++
 			continue
 		}
 		have[k] = true
@@ -151,6 +157,7 @@ func (s *Server) saveOnce(ctx context.Context) error {
 			continue
 		}
 		used += n
+		added++
 		log.Printf("saver: saved anime %d ep %g (%d MB)", k.id, k.ep, n>>20)
 	}
 	return nil
