@@ -49,8 +49,11 @@ type parsed struct {
 func parse(title string) parsed {
 	s := strings.ToLower(title)
 	s = strings.Map(func(r rune) rune {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+		switch {
+		case unicode.IsLetter(r) || unicode.IsDigit(r):
 			return r
+		case r == '\'' || r == '’' || r == '`':
+			return -1 // "Eye’s" and "Eyes" are the same word
 		}
 		return ' '
 	}, s)
@@ -194,8 +197,14 @@ func Score(m anilist.Media, r provider.Result) float64 {
 	if isMovie != c.movie {
 		best *= 0.8
 	}
-	if m.Episodes > 0 && r.Episodes > 0 && r.Episodes > m.Episodes {
-		best *= 0.8 // provider has more episodes than the show can have
+	// A provider show with more episodes than the entry can have is usually
+	// the parent series of an OVA or special, or a later season.
+	if m.Episodes > 0 && r.Episodes > m.Episodes {
+		if r.Episodes >= 2*m.Episodes && r.Episodes-m.Episodes >= 2 {
+			best *= 0.55
+		} else {
+			best *= 0.8 // a recap or bonus episode counted by the site
+		}
 	}
 	return best
 }

@@ -20,7 +20,7 @@ func TestParse(t *testing.T) {
 		tokens       string
 	}{
 		{"Sousou No Frieren 2Nd Season", 2, 1, "soso no frieren"},
-		{"Frieren: Beyond Journey’s End Season 2", 2, 1, "frieren beyond jorney s end"},
+		{"Frieren: Beyond Journey’s End Season 2", 2, 1, "frieren beyond jorneys end"},
 		{"Mushoku Tensei II: Isekai Ittara Honki Dasu Part 2", 2, 2, "mushoku tensei isekai ittara honki dasu"},
 		{"Mushoku Tensei S2 Part 2 Sub Indo", 2, 2, "mushoku tensei"},
 		{"Overlord IV", 4, 1, "overlord"},
@@ -107,5 +107,27 @@ func TestTrailingNumberIsSeason(t *testing.T) {
 	s1 := Score(m, provider.Result{Title: "Otome Game Sekai Wa Mob Ni Kibishii Sekai Desu", Episodes: 12})
 	if right < Threshold || s1 >= right {
 		t.Errorf("season 2 %.2f, season 1 %.2f", right, s1)
+	}
+}
+
+func TestApostropheJoinsWord(t *testing.T) {
+	m := media("Vivy: Fluorite Eye’s Song", "Vivy -Fluorite Eye's Song-", 13, "TV")
+	if s := Score(m, provider.Result{Title: "Vivy Fluorite Eyes Song", Episodes: 13}); s < Threshold {
+		t.Errorf("score %.2f", s)
+	}
+	if q := Queries(m); q[0] != "vivy fluorite eyes song" {
+		t.Errorf("Queries = %q", q)
+	}
+}
+
+func TestOVADoesNotMatchParentSeries(t *testing.T) {
+	ova := media("Inari, Konkon, Koi Iroha.: Inari, Konkon, Semishigure", "", 1, "OVA")
+	if s := Score(ova, provider.Result{Title: "Inari Konkon Koi Iroha", Episodes: 10}); s >= Threshold {
+		t.Errorf("OVA matched the 10-episode series with %.2f", s)
+	}
+	// A site counting one bonus episode must still match.
+	tv := media("Durarara!!", "Durarara!!", 24, "TV")
+	if s := Score(tv, provider.Result{Title: "Durarara!!", Episodes: 26}); s < Threshold {
+		t.Errorf("Durarara score %.2f", s)
 	}
 }
