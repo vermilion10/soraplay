@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/vermilion10/nonton/internal/anilist"
+	"github.com/vermilion10/nonton/internal/aniskip"
 	"github.com/vermilion10/nonton/internal/config"
 	"github.com/vermilion10/nonton/internal/progress"
 	"github.com/vermilion10/nonton/internal/provider"
@@ -28,6 +29,7 @@ type Server struct {
 	// AdultProvider serves AniList entries marked adult; nil sends them to Provider.
 	AdultProvider provider.Provider
 	Progress      *progress.Worker
+	AniSkip       *aniskip.Client
 	Static        fs.FS // built frontend; index.html is served for unknown paths
 
 	relayOnce     sync.Once
@@ -67,6 +69,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/anime/{id}/episodes/{ep}/stream", s.stream)
 	mux.HandleFunc("POST /api/anime/{id}/progress", s.progress)
 	mux.HandleFunc("PUT /api/anime/{id}/episodes/{ep}/position", s.savePosition)
+	mux.HandleFunc("GET /api/anime/{id}/episodes/{ep}/skip", s.skipTimes)
 	mux.HandleFunc("GET /api/relay", s.relay)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "no such endpoint")

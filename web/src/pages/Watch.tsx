@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Hls from 'hls.js'
-import { api, clock, resumable, titleOf, type Position } from '../lib/api'
+import { api, clock, resumable, titleOf, type Interval, type Position, type SkipTimes } from '../lib/api'
 import { Empty, ErrorBox, Loading } from '../components/States'
 
 // Share of an episode that counts as watched. Past this point the end credits
@@ -89,7 +89,7 @@ export default function Watch() {
         </p>
       )}
       <p className="mt-4 text-xs text-muted">
-        Keys: Space play/pause · ← → seek · F fullscreen{next !== undefined && ' · N next episode'}
+        Keys: Space play/pause · ← → seek · F fullscreen · S skip intro or ending{next !== undefined && ' · N next episode'}
       </p>
     </article>
   )
@@ -118,6 +118,8 @@ function Player({
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
   const [resumedAt, setResumedAt] = useState<number | null>(null)
+  const [skip, setSkip] = useState<SkipTimes | null>(null)
+  const [inPart, setInPart] = useState<'op' | 'ed' | null>(null)
   const qc = useQueryClient()
   const navigate = useNavigate()
   // Held in a ref: the parent passes a new function on every render, and the
@@ -173,7 +175,9 @@ function Player({
 
   function onLoaded() {
     const v = video.current
-    if (!v || !resumable(resume)) return
+    if (!v) return
+    api.skipTimes(animeId, ep, v.duration).then(setSkip).catch(() => {})
+    if (!resumable(resume)) return
     v.currentTime = resume.position
     lastSaved.current = resume.position
     setResumedAt(resume.position)
@@ -183,6 +187,8 @@ function Player({
     const v = video.current
     if (!v) return
     if (Math.abs(v.currentTime - lastSaved.current) >= 10) savePosition()
+    const within = (iv: Interval | null) => !!iv && v.currentTime >= iv.start && v.currentTime < iv.end - 2
+    setInPart(within(skip?.op ?? null) ? 'op' : within(skip?.ed ?? null) ? 'ed' : null)
     if (sent.current || !v.duration || v.currentTime / v.duration < WATCHED_AT) return
     sent.current = true
     if (!syncProgress) {
@@ -204,6 +210,21 @@ function Player({
         setStatus(`Could not save progress: ${e.message}`)
       })
   }
+
+  // Skipping the ending goes to the next episode when there is one.
+  function skipPart() {
+    const v = video.current
+    if (!v || !inPart || !skip) return
+    if (inPart === 'ed' && nextEp !== undefined) {
+      navigate(`/watch/${animeId}/${nextEp}`)
+      return
+    }
+    const iv = inPart === 'op' ? skip.op : skip.ed
+    if (iv) v.currentTime = iv.end
+    setInPart(null)
+  }
+  const skipRef = useRef(skipPart)
+  skipRef.current = skipPart
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -233,6 +254,9 @@ function Player({
           if (document.fullscreenElement) document.exitFullscreen()
           else v.requestFullscreen?.()
           break
+        case 's':
+          skipRef.current()
+          break
         case 'n':
           if (nextEp !== undefined) navigate(`/watch/${animeId}/${nextEp}`)
           break
@@ -249,6 +273,7 @@ function Player({
           <ErrorBox title="The video stopped." error={error} onRetry={onExpired} />
         </div>
       ) : (
+        <div className="relative">
         <video
           ref={video}
           controls
@@ -258,6 +283,16 @@ function Player({
           onPause={() => savePosition()}
           className="aspect-video w-full bg-black"
         />
+        {inPart && (
+          <button
+            type="button"
+            onClick={skipPart}
+            className="absolute right-3 bottom-16 min-h-11 rounded-md border border-line bg-surface/90 px-4 text-sm font-medium hover:border-muted"
+          >
+            {inPart === 'op' ? 'Skip intro' : nextEp !== undefined ? 'Next episode' : 'Skip ending'}
+          </button>
+        )}
+        </div>
       )}
       {resumedAt !== null && (
         <div className="flex flex-wrap items-center gap-x-3 px-4 py-1 text-sm text-muted sm:px-3">

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/vermilion10/nonton/internal/anilist"
+	"github.com/vermilion10/nonton/internal/aniskip"
 	"github.com/vermilion10/nonton/internal/config"
 	"github.com/vermilion10/nonton/internal/httpc"
 	"github.com/vermilion10/nonton/internal/progress"
@@ -49,6 +50,7 @@ func main() {
 		Provider:      sourcea.New(cfg.SourceABase, httpc.New()),
 		AdultProvider: adult,
 		Progress:      worker,
+		AniSkip:       aniskip.New(),
 		Static:        web.Dist(),
 	}
 

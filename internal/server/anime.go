@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"math"
 	"net/http"
 	"sort"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/vermilion10/nonton/internal/anilist"
+	"github.com/vermilion10/nonton/internal/aniskip"
 	"github.com/vermilion10/nonton/internal/match"
 	"github.com/vermilion10/nonton/internal/provider"
 	"github.com/vermilion10/nonton/internal/store"
@@ -247,9 +249,11 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	mp, err := s.Store.Mapping(ctx, m.ID, p.Name())
+	// Match here too: the player can be opened straight from the home page
+	// for an anime whose page was never visited.
+	mp, _, err := s.mapping(ctx, p, m)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		writeErr(w, http.StatusBadGateway, err.Error())
 		return
 	}
 	if mp == nil {
@@ -335,4 +339,29 @@ func (s *Server) savePosition(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// skipTimes returns the opening and ending of an episode from AniSkip,
+// fitted to the length of the video being played (?length= in seconds).
+// Missing data is an empty answer, never an error: skipping is optional.
+func (s *Server) skipTimes(w http.ResponseWriter, r *http.Request) {
+	ep, err := strconv.ParseFloat(r.PathValue("ep"), 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "bad episode number")
+		return
+	}
+	m, _, ok := s.animeAndProvider(w, r)
+	if !ok {
+		return
+	}
+	length, _ := strconv.ParseFloat(r.URL.Query().Get("length"), 64)
+	times := &aniskip.Times{}
+	if m.IDMal > 0 && s.AniSkip != nil {
+		if t, err := s.AniSkip.Get(r.Context(), m.IDMal, ep, length); err == nil {
+			times = t
+		} else {
+			log.Printf("aniskip: anime %d ep %g: %v", m.ID, ep, err)
+		}
+	}
+	writeJSON(w, http.StatusOK, times)
 }

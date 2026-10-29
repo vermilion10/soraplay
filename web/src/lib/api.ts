@@ -51,6 +51,10 @@ export type AnimeDetail = {
 
 export type Stream = { url: string; type: string; headers: Record<string, string>; subLang: string; server: string }
 
+export type Interval = { start: number; end: number }
+
+export type SkipTimes = { op: Interval | null; ed: Interval | null }
+
 export type StreamResult = { episode: number; title: string; streams: Stream[]; resume: Position | null }
 
 export class ApiError extends Error {
@@ -89,6 +93,8 @@ export const api = {
   // keepalive lets the last save finish while the page is closing.
   savePosition: (id: number, ep: number, position: number, duration: number, keepalive = false) =>
     request<void>('PUT', `/api/anime/${id}/episodes/${ep}/position`, { position, duration }, keepalive),
+  skipTimes: (id: number, ep: number, length: number) =>
+    request<SkipTimes>('GET', `/api/anime/${id}/episodes/${ep}/skip?length=${Math.round(length)}`),
   progress: (id: number, episode: number) =>
     request<{ queued: boolean }>('POST', `/api/anime/${id}/progress`, { episode }),
 }
