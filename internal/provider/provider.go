@@ -34,6 +34,9 @@ type Stream struct {
 	Headers map[string]string `json:"headers"` // headers the CDN expects (Referer, Origin, ...)
 	SubLang string            `json:"subLang"` // e.g. "id-hardsub"
 	Server  string            `json:"server"`  // human-readable server name
+	// Relay means the stream only plays when fetched by the server that
+	// resolved it (the token is tied to its User-Agent or address).
+	Relay bool `json:"-"`
 }
 
 // Provider is a site that can be searched and streamed from.

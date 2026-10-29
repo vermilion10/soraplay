@@ -276,6 +276,11 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadGateway, err.Error())
 		return
 	}
+	for i := range streams {
+		if streams[i].Relay {
+			streams[i].URL = s.relayURL(streams[i].URL)
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"episode": ep, "title": pe.Title, "streams": streams})
 }
 

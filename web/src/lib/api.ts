@@ -16,6 +16,7 @@ export type Media = {
   seasonYear: number
   coverImage: { large: string; color: string }
   bannerImage: string
+  isAdult: boolean
   description: string
   genres: string[] | null
   averageScore: number
@@ -33,10 +34,13 @@ export type Mapping = { providerId: string; title: string; epOffset: number; man
 
 export type Candidate = { id: string; title: string; episodes: number; poster: string; score: number }
 
+export type Source = { id: string; name: string }
+
 export type Episode = { number: number; title: string }
 
 export type AnimeDetail = {
   media: Media
+  source: Source
   mapping: Mapping | null
   episodes: Episode[]
   candidates?: Candidate[]

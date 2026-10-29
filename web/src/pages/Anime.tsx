@@ -17,6 +17,7 @@ export default function Anime() {
 
 function Detail({ data }: { data: AnimeDetail }) {
   const { media: m, mapping, episodes } = data
+  const src = data.source.name
   const [picker, setPicker] = useState(false)
   const [more, setMore] = useState(false)
   const progress = m.mediaListEntry?.progress ?? 0
@@ -87,7 +88,7 @@ function Detail({ data }: { data: AnimeDetail }) {
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="font-display text-2xl font-semibold">Episodes</h2>
           <p className="text-sm text-muted">
-            {mapping ? <>Source A: {mapping.title}</> : 'Not linked to Source A'}
+            {mapping ? <>{src}: {mapping.title}</> : `Not linked to ${src}`}
             <button
               type="button"
               onClick={() => setPicker(true)}
@@ -98,16 +99,16 @@ function Detail({ data }: { data: AnimeDetail }) {
           </p>
         </div>
 
-        {data.sourceError && <ErrorBox title="Source A did not respond as expected." error={data.sourceError} />}
+        {data.sourceError && <ErrorBox title={`${src} did not respond as expected.`} error={data.sourceError} />}
         {!mapping && !data.sourceError && (
           <Empty>
             {data.candidates && data.candidates.length > 0
-              ? 'No confident match on Source A. Use "Find it" to pick the right show.'
-              : 'This anime was not found on Source A. It may not be uploaded yet, or it is listed under another title: use "Find it" to search by hand.'}
+              ? `No confident match on ${src}. Use "Find it" to pick the right show.`
+              : `This anime was not found on ${src}. It may not be uploaded yet, or it is listed under another title: use "Find it" to search by hand.`}
           </Empty>
         )}
         {mapping && episodes.length === 0 && !data.sourceError && (
-          <Empty>No episodes are up on Source A yet.</Empty>
+          <Empty>No episodes are up on {src} yet.</Empty>
         )}
         {episodes.length > 0 && (
           <ol className="mt-3 grid grid-cols-[repeat(auto-fill,minmax(3.25rem,1fr))] gap-2">
@@ -151,6 +152,7 @@ function Detail({ data }: { data: AnimeDetail }) {
         animeId={m.id}
         defaultQuery={m.title.romaji}
         current={mapping}
+        sourceName={src}
         open={picker}
         onClose={() => setPicker(false)}
       />

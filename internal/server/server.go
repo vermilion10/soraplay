@@ -30,6 +30,9 @@ type Server struct {
 	Progress      *progress.Worker
 	Static        fs.FS // built frontend; index.html is served for unknown paths
 
+	relayOnce     sync.Once
+	relayKeyBytes []byte
+
 	mu        sync.Mutex
 	animeMemo map[string]memo // provider anime pages, keyed by provider ID
 	missMemo  map[int]time.Time
@@ -63,6 +66,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/anime/{id}/mapping", s.deleteMapping)
 	mux.HandleFunc("GET /api/anime/{id}/episodes/{ep}/stream", s.stream)
 	mux.HandleFunc("POST /api/anime/{id}/progress", s.progress)
+	mux.HandleFunc("GET /api/relay", s.relay)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "no such endpoint")
 	})
@@ -88,7 +92,8 @@ func logRequests(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		next.ServeHTTP(w, r)
-		if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/auth/") {
+		// Relayed video segments are left out: one every few seconds per viewer.
+		if (strings.HasPrefix(r.URL.Path, "/api/") && r.URL.Path != "/api/relay") || strings.HasPrefix(r.URL.Path, "/auth/") {
 			log.Printf("%s %s %s", r.Method, r.URL.Path, time.Since(start).Round(time.Millisecond))
 		}
 	})

@@ -10,12 +10,14 @@ export function SourcePicker({
   animeId,
   defaultQuery,
   current,
+  sourceName,
   open,
   onClose,
 }: {
   animeId: number
   defaultQuery: string
   current: Mapping | null
+  sourceName: string
   open: boolean
   onClose: () => void
 }) {
@@ -59,7 +61,7 @@ export function SourcePicker({
     >
       <div className="flex items-center justify-between gap-4 border-b border-line px-4 py-2">
         <h2 id="picker-title" className="font-display text-xl font-semibold">
-          Choose the show on Source A
+          Choose the show on {sourceName}
         </h2>
         <button type="button" onClick={onClose} className="min-h-11 px-2 text-sm text-muted hover:text-ink">
           Close
@@ -68,7 +70,7 @@ export function SourcePicker({
       <div className="max-h-[70dvh] overflow-y-auto p-4">
         <form onSubmit={submit} className="flex gap-2">
           <label htmlFor="picker-q" className="sr-only">
-            Search Source A
+            Search {sourceName}
           </label>
           <input
             id="picker-q"
@@ -101,7 +103,7 @@ export function SourcePicker({
           {results.isError && <ErrorBox title="Search failed." error={results.error} />}
           {save.isError && <ErrorBox title="Could not save that choice." error={save.error} />}
           {results.data && results.data.length === 0 && !results.isFetching && (
-            <p className="text-sm text-muted">Nothing on Source A matches "{q}". Try a shorter or different title.</p>
+            <p className="text-sm text-muted">Nothing on {sourceName} matches "{q}". Try a shorter or different title.</p>
           )}
           <ul className="flex flex-col gap-1">
             {results.data?.map((c) => (
