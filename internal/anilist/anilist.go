@@ -55,9 +55,21 @@ type Media struct {
 }
 
 type ListEntry struct {
-	Progress  int    `json:"progress"`
-	Status    string `json:"status"`
-	UpdatedAt int64  `json:"updatedAt"`
+	ID          int       `json:"id"`
+	Progress    int       `json:"progress"`
+	Status      string    `json:"status"`
+	UpdatedAt   int64     `json:"updatedAt"`
+	Score       float64   `json:"score"` // in the viewer's score format
+	Repeat      int       `json:"repeat"`
+	StartedAt   FuzzyDate `json:"startedAt"`
+	CompletedAt FuzzyDate `json:"completedAt"`
+}
+
+// FuzzyDate is a date that may be partly unknown; zero fields are unknown.
+type FuzzyDate struct {
+	Year  int `json:"year"`
+	Month int `json:"month"`
+	Day   int `json:"day"`
 }
 
 // ListItem is one entry of the viewer's list together with its media.
@@ -72,6 +84,11 @@ type Viewer struct {
 	Avatar struct {
 		Medium string `json:"medium"`
 	} `json:"avatar"`
+	// MediaListOptions.ScoreFormat is how the viewer scores: POINT_100,
+	// POINT_10_DECIMAL, POINT_10, POINT_5 or POINT_3.
+	MediaListOptions struct {
+		ScoreFormat string `json:"scoreFormat"`
+	} `json:"mediaListOptions"`
 }
 
 const mediaFields = `
@@ -84,6 +101,9 @@ const mediaFields = `
 	genres averageScore isAdult
 	nextAiringEpisode { episode airingAt }`
 
+const entryFields = `id progress status updatedAt score repeat
+	startedAt { year month day } completedAt { year month day }`
+
 // Client talks to AniList. Token may be empty for public queries.
 //
 // AniList allows about 30 requests a minute, so media is cached: for an hour
@@ -95,6 +115,13 @@ type Client struct {
 	mu        sync.Mutex
 	cache     map[int]cachedMedia // without mediaListEntry
 	userCache map[int]cachedMedia // with the viewer's mediaListEntry
+	pages     map[string]cachedPage
+}
+
+// cachedPage is a public query result (schedule, season, extras) kept for an hour.
+type cachedPage struct {
+	v  any
+	at time.Time
 }
 
 type cachedMedia struct {
@@ -112,6 +139,7 @@ func New() *Client {
 		HTTP:      &http.Client{Timeout: 15 * time.Second},
 		cache:     map[int]cachedMedia{},
 		userCache: map[int]cachedMedia{},
+		pages:     map[string]cachedPage{},
 	}
 }
 
@@ -168,7 +196,7 @@ func (c *Client) query(ctx context.Context, token, q string, vars map[string]any
 
 func (c *Client) Viewer(ctx context.Context, token string) (*Viewer, error) {
 	var out struct{ Viewer Viewer }
-	if err := c.query(ctx, token, `query { Viewer { id name avatar { medium } } }`, nil, &out); err != nil {
+	if err := c.query(ctx, token, `query { Viewer { id name avatar { medium } mediaListOptions { scoreFormat } } }`, nil, &out); err != nil {
 		return nil, err
 	}
 	return &out.Viewer, nil
@@ -178,7 +206,7 @@ func (c *Client) Viewer(ctx context.Context, token string) (*Viewer, error) {
 func (c *Client) List(ctx context.Context, token string, userID int, statuses []string) ([]ListItem, error) {
 	q := `query ($user: Int, $status: [MediaListStatus]) {
 		MediaListCollection(userId: $user, type: ANIME, status_in: $status, sort: UPDATED_TIME_DESC) {
-			lists { entries { progress status updatedAt media {` + mediaFields + ` } } }
+			lists { entries { ` + entryFields + ` media {` + mediaFields + ` } } }
 		}
 	}`
 	var out struct {
@@ -212,7 +240,7 @@ func (c *Client) Media(ctx context.Context, token string, id int) (*Media, error
 	}
 	entry := ""
 	if token != "" {
-		entry = "mediaListEntry { progress status updatedAt }"
+		entry = "mediaListEntry { " + entryFields + " }"
 	}
 	q := `query ($id: Int) { Media(id: $id, type: ANIME) {` + mediaFields + ` ` + entry + ` } }`
 	var out struct{ Media Media }
@@ -254,25 +282,6 @@ func (c *Client) Search(ctx context.Context, token, search string) ([]Media, err
 	return out.Page.Media, nil
 }
 
-// Seasonal returns the most popular anime of a season (WINTER, SPRING, SUMMER, FALL).
-func (c *Client) Seasonal(ctx context.Context, token, season string, year, perPage int) ([]Media, error) {
-	q := `query ($season: MediaSeason, $year: Int, $n: Int) {
-		Page(perPage: $n) { media(season: $season, seasonYear: $year, type: ANIME, sort: POPULARITY_DESC, isAdult: false) {` + mediaFields + ` } }
-	}`
-	var out struct {
-		Page struct {
-			Media []Media `json:"media"`
-		}
-	}
-	if err := c.query(ctx, token, q, map[string]any{"season": season, "year": year, "n": perPage}, &out); err != nil {
-		return nil, err
-	}
-	for _, m := range out.Page.Media {
-		c.put(m)
-	}
-	return out.Page.Media, nil
-}
-
 // SaveProgress sets progress and status on the viewer's list entry.
 func (c *Client) SaveProgress(ctx context.Context, token string, mediaID, progress int, status string) (*ListEntry, error) {
 	q := `mutation ($id: Int, $p: Int, $s: MediaListStatus) {
@@ -283,6 +292,22 @@ func (c *Client) SaveProgress(ctx context.Context, token string, mediaID, progre
 		return nil, err
 	}
 	return &out.SaveMediaListEntry, nil
+}
+
+func (c *Client) page(key string) (any, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	p, ok := c.pages[key]
+	if !ok || time.Since(p.at) > mediaTTL {
+		return nil, false
+	}
+	return p.v, true
+}
+
+func (c *Client) putPage(key string, v any) {
+	c.mu.Lock()
+	c.pages[key] = cachedPage{v: v, at: time.Now()}
+	c.mu.Unlock()
 }
 
 func (c *Client) get(id int, withEntry bool) (Media, bool) {

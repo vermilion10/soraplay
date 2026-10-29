@@ -62,7 +62,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/list", s.list)
 	mux.HandleFunc("GET /api/search", s.search)
 	mux.HandleFunc("GET /api/seasonal", s.seasonal)
+	mux.HandleFunc("GET /api/schedule", s.schedule)
+	mux.HandleFunc("GET /api/saved", s.saved)
 	mux.HandleFunc("GET /api/anime/{id}", s.anime)
+	mux.HandleFunc("GET /api/anime/{id}/extras", s.extras)
+	mux.HandleFunc("PUT /api/anime/{id}/entry", s.saveEntry)
+	mux.HandleFunc("DELETE /api/anime/{id}/entry", s.deleteEntry)
 	mux.HandleFunc("GET /api/anime/{id}/candidates", s.candidates)
 	mux.HandleFunc("PUT /api/anime/{id}/mapping", s.saveMapping)
 	mux.HandleFunc("DELETE /api/anime/{id}/mapping", s.deleteMapping)
@@ -214,7 +219,15 @@ func (s *Server) session(ctx context.Context) (string, *anilist.Viewer) {
 }
 
 func (s *Server) me(w http.ResponseWriter, r *http.Request) {
-	_, v := s.session(r.Context())
+	token, v := s.session(r.Context())
+	if v != nil && v.MediaListOptions.ScoreFormat == "" {
+		// Logged in before the score format was stored: read it once.
+		if fresh, err := s.AniList.Viewer(r.Context(), token); err == nil {
+			if raw, err := json.Marshal(fresh); err == nil && s.Store.Set(r.Context(), "anilist_user", string(raw)) == nil {
+				v = fresh
+			}
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"user":       v,
 		"configured": s.Cfg.ClientID != "" && s.Cfg.ClientSecret != "",
@@ -289,19 +302,6 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, ms)
-}
-
-func (s *Server) seasonal(w http.ResponseWriter, r *http.Request) {
-	now := time.Now()
-	season := [...]string{"WINTER", "WINTER", "WINTER", "SPRING", "SPRING", "SPRING",
-		"SUMMER", "SUMMER", "SUMMER", "FALL", "FALL", "FALL"}[now.Month()-1]
-	token, _ := s.session(r.Context())
-	ms, err := s.AniList.Seasonal(r.Context(), token, season, now.Year(), 30)
-	if err != nil {
-		writeAniListErr(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"season": season, "year": now.Year(), "media": ms})
 }
 
 // ---- helpers ----
