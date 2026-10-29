@@ -20,11 +20,14 @@ function weekDays(offset: number): Date[] {
 
 const MINE_KEY = 'schedule.mine'
 
+// "On my list" means shows being followed, not ones finished or dropped.
+const FOLLOWING = new Set(['CURRENT', 'REPEATING', 'PLANNING', 'PAUSED'])
+
 function readMine(): boolean {
   try {
-    return localStorage.getItem(MINE_KEY) !== '0'
+    return localStorage.getItem(MINE_KEY) === '1'
   } catch {
-    return true
+    return false
   }
 }
 
@@ -59,7 +62,7 @@ export default function Schedule() {
   const shown = (q.data ?? []).filter((a) => {
     const entry = onList.get(a.media.id)
     if (a.media.isAdult && !entry) return false
-    return !mine || (entry && entry.status !== 'DROPPED')
+    return !mine || (entry && FOLLOWING.has(entry.status))
   })
   const perDay = days.slice(0, 7).map((d, i) =>
     shown.filter((a) => a.airingAt * 1000 >= d.getTime() && a.airingAt * 1000 < days[i + 1].getTime()),
@@ -132,7 +135,7 @@ export default function Schedule() {
         {q.data && perDay[day].length === 0 && (
           <Empty>
             {mine
-              ? `Nothing on your list airs on ${fmtWeekday(days[day])}.`
+              ? `Nothing you are watching or planning airs on ${fmtWeekday(days[day])}. Pick Everything to see the full schedule.`
               : `AniList lists nothing airing on ${fmtWeekday(days[day])}.`}
           </Empty>
         )}
