@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS mappings (
 CREATE TABLE IF NOT EXISTS availability (
 	anilist_id INTEGER PRIMARY KEY,
 	latest_ep  REAL    NOT NULL,
-	checked_at INTEGER NOT NULL
+	checked_at INTEGER NOT NULL,
+	grew_at    INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS positions (
 	anilist_id INTEGER NOT NULL,
@@ -62,7 +63,31 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	if err := migrate(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return &Store{db: db}, nil
+}
+
+// migrate adds columns that databases made by older versions lack.
+func migrate(db *sql.DB) error {
+	added := []struct{ table, column, def string }{
+		{"availability", "grew_at", "INTEGER NOT NULL DEFAULT 0"},
+	}
+	for _, a := range added {
+		var n int
+		err := db.QueryRow(`SELECT count(*) FROM pragma_table_info(?) WHERE name = ?`, a.table, a.column).Scan(&n)
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			if _, err := db.Exec("ALTER TABLE " + a.table + " ADD COLUMN " + a.column + " " + a.def); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }
@@ -245,6 +270,7 @@ func (s *Store) LatestPositions(ctx context.Context) (map[int]Position, error) {
 type Availability struct {
 	LatestEp  float64
 	CheckedAt time.Time
+	GrewAt    time.Time // when LatestEp last went up; zero if never seen to
 }
 
 // SetAvailability records the newest episode on the source and returns
@@ -257,14 +283,17 @@ func (s *Store) SetAvailability(ctx context.Context, anilistID int, latest float
 	}
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO availability (anilist_id, latest_ep, checked_at) VALUES (?, ?, ?)
-		ON CONFLICT (anilist_id) DO UPDATE SET latest_ep = excluded.latest_ep, checked_at = excluded.checked_at`,
+		ON CONFLICT (anilist_id) DO UPDATE SET
+			grew_at = CASE WHEN excluded.latest_ep > availability.latest_ep
+				THEN excluded.checked_at ELSE availability.grew_at END,
+			latest_ep = excluded.latest_ep, checked_at = excluded.checked_at`,
 		anilistID, latest, time.Now().Unix())
 	return prev, err
 }
 
 // AllAvailability returns every recorded availability, by AniList ID.
 func (s *Store) AllAvailability(ctx context.Context) (map[int]Availability, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT anilist_id, latest_ep, checked_at FROM availability`)
+	rows, err := s.db.QueryContext(ctx, `SELECT anilist_id, latest_ep, checked_at, grew_at FROM availability`)
 	if err != nil {
 		return nil, err
 	}
@@ -273,11 +302,14 @@ func (s *Store) AllAvailability(ctx context.Context) (map[int]Availability, erro
 	for rows.Next() {
 		var id int
 		var a Availability
-		var at int64
-		if err := rows.Scan(&id, &a.LatestEp, &at); err != nil {
+		var at, grew int64
+		if err := rows.Scan(&id, &a.LatestEp, &at, &grew); err != nil {
 			return nil, err
 		}
 		a.CheckedAt = time.Unix(at, 0)
+		if grew > 0 {
+			a.GrewAt = time.Unix(grew, 0)
+		}
 		out[id] = a
 	}
 	return out, rows.Err()

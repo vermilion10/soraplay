@@ -253,6 +253,9 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 		Resume *store.Position `json:"resume"`
 		// Available is the newest episode on the source at the last check.
 		Available *float64 `json:"available"`
+		// ArrivedAt is when that episode appeared (Unix seconds); null when
+		// it was already there at the first check.
+		ArrivedAt *int64 `json:"arrivedAt"`
 	}
 	out := make([]listItemJSON, 0, len(items))
 	for _, it := range items {
@@ -262,6 +265,10 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 		}
 		if a, ok := avail[it.Media.ID]; ok {
 			li.Available = &a.LatestEp
+			if !a.GrewAt.IsZero() {
+				at := a.GrewAt.Unix()
+				li.ArrivedAt = &at
+			}
 		}
 		out = append(out, li)
 	}

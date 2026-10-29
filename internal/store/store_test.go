@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
 	"testing"
 )
@@ -87,7 +88,36 @@ func TestAvailability(t *testing.T) {
 		t.Fatalf("second set: prev %v; want 3", prev)
 	}
 	all, err := s.AllAvailability(ctx)
-	if err != nil || all[5].LatestEp != 4 || all[5].CheckedAt.IsZero() {
-		t.Fatalf("all = %+v, %v", all, err)
+	if err != nil || all[5].LatestEp != 4 || all[5].CheckedAt.IsZero() || all[5].GrewAt.IsZero() {
+		t.Fatalf("all = %+v, %v; want episode 4 with a growth time", all, err)
+	}
+	// The first sighting is a baseline, not growth; an unchanged check keeps it so.
+	s.SetAvailability(ctx, 6, 10)
+	s.SetAvailability(ctx, 6, 10)
+	if all, _ := s.AllAvailability(ctx); !all[6].GrewAt.IsZero() {
+		t.Fatalf("baseline marked as growth: %+v", all[6])
+	}
+}
+
+func TestMigrateAddsColumn(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "old.db")
+	db, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The availability table as the first release created it.
+	if _, err := db.Exec(`CREATE TABLE availability (anilist_id INTEGER PRIMARY KEY, latest_ep REAL NOT NULL, checked_at INTEGER NOT NULL);
+		INSERT INTO availability VALUES (1, 3, 100)`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	s.SetAvailability(context.Background(), 1, 4)
+	if all, _ := s.AllAvailability(context.Background()); all[1].GrewAt.IsZero() {
+		t.Fatalf("old database did not get grew_at: %+v", all[1])
 	}
 }

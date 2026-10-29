@@ -27,7 +27,13 @@ export type Media = {
 export type Position = { episode: number; position: number; duration: number; updatedAt: number }
 
 // available: newest episode on the source at the server's last check, or null.
-export type ListItem = ListEntry & { media: Media; resume: Position | null; available: number | null }
+// arrivedAt: when it appeared (Unix seconds), null if it was there at the first check.
+export type ListItem = ListEntry & {
+  media: Media
+  resume: Position | null
+  available: number | null
+  arrivedAt: number | null
+}
 
 export type Viewer = { id: number; name: string; avatar: { medium: string } }
 

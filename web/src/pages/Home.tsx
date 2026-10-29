@@ -50,7 +50,12 @@ function Watching() {
     return <ErrorBox title="Could not load your Watching list." error={list.error} onRetry={() => list.refetch()} />
 
   const [first, ...rest] = list.data
-  const hasNew = (it: ListItem) => it.available !== null && it.available > it.progress
+  // New means it arrived this week and is unwatched; an older backlog is not news.
+  const hasNew = (it: ListItem) =>
+    it.available !== null &&
+    it.available > it.progress &&
+    it.arrivedAt !== null &&
+    Date.now() / 1000 - it.arrivedAt < NEW_FOR
   const fresh = rest.filter(hasNew)
   const others = rest.filter((it) => !hasNew(it))
   if (!first)
@@ -80,6 +85,8 @@ function Watching() {
     </section>
   )
 }
+
+const NEW_FOR = 7 * 24 * 3600 // seconds an episode counts as new
 
 function newNote(it: ListItem): string {
   const n = Math.floor(it.available! - it.progress)
