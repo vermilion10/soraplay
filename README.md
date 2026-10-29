@@ -60,6 +60,7 @@ The app is then at `https://<machine>.<tailnet>.ts.net`; use that as `NONTON_PUB
 | `NONTON_DATA` | `data` | Folder for the SQLite database |
 | `SOURCE_A_BASE` | `https://source-a.example` | Source for regular anime, for when its domain changes |
 | `SOURCE_E_BASE` | `https://source-e.example` | Source for adult entries; `off` sends them to Source A |
+| `RELAY_ALL` | (off) | `1` relays every stream through the server, so video hosts see neither the viewer's address nor the app's `Origin` header (costs the server's upload bandwidth when watching away from home) |
 
 ## Access
 

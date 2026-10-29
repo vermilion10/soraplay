@@ -16,6 +16,9 @@ type Config struct {
 	ClientSecret  string
 	SourceABase string
 	SourceEBase   string // source for adult entries; "off" disables it
+	// RelayAll sends every stream through the server, so video hosts never
+	// see the viewer's address or this app's Origin.
+	RelayAll bool
 }
 
 func Load() Config {
@@ -28,6 +31,7 @@ func Load() Config {
 		ClientSecret:  env("ANILIST_CLIENT_SECRET", ""),
 		SourceABase: env("SOURCE_A_BASE", "https://source-a.example"),
 		SourceEBase:   env("SOURCE_E_BASE", "https://source-e.example"),
+		RelayAll:      env("RELAY_ALL", "") == "1",
 	}
 }
 

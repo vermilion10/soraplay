@@ -277,7 +277,7 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for i := range streams {
-		if streams[i].Relay {
+		if streams[i].Relay || s.Cfg.RelayAll {
 			streams[i].URL = s.relayURL(streams[i].URL)
 		}
 	}

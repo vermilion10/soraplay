@@ -71,7 +71,19 @@ func (s *Server) Handler() http.Handler {
 		writeErr(w, http.StatusNotFound, "no such endpoint")
 	})
 	mux.Handle("/", s.static())
-	return logRequests(requireJSON(mux))
+	return logRequests(privacyHeaders(requireJSON(mux)))
+}
+
+// privacyHeaders stops browsers from telling other sites about this app:
+// with no-referrer, requests for video, cover images and posters carry no
+// Referer, and cross-origin requests send "Origin: null" instead of the
+// app's address.
+func privacyHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		next.ServeHTTP(w, r)
+	})
 }
 
 // requireJSON rejects state-changing requests that are not JSON. Browsers
