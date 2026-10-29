@@ -220,6 +220,25 @@ func (c *Client) Search(ctx context.Context, token, search string) ([]Media, err
 	return out.Page.Media, nil
 }
 
+// Seasonal returns the most popular anime of a season (WINTER, SPRING, SUMMER, FALL).
+func (c *Client) Seasonal(ctx context.Context, token, season string, year, perPage int) ([]Media, error) {
+	q := `query ($season: MediaSeason, $year: Int, $n: Int) {
+		Page(perPage: $n) { media(season: $season, seasonYear: $year, type: ANIME, sort: POPULARITY_DESC, isAdult: false) {` + mediaFields + ` } }
+	}`
+	var out struct {
+		Page struct {
+			Media []Media `json:"media"`
+		}
+	}
+	if err := c.query(ctx, token, q, map[string]any{"season": season, "year": year, "n": perPage}, &out); err != nil {
+		return nil, err
+	}
+	for _, m := range out.Page.Media {
+		c.put(m)
+	}
+	return out.Page.Media, nil
+}
+
 // SaveProgress sets progress and status on the viewer's list entry.
 func (c *Client) SaveProgress(ctx context.Context, token string, mediaID, progress int, status string) (*ListEntry, error) {
 	q := `mutation ($id: Int, $p: Int, $s: MediaListStatus) {
