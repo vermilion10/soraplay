@@ -4,6 +4,12 @@ services:
     image: soraplay:latest
     container_name: soraplay
     restart: unless-stopped
+    # Runs as the host user so it can write ./data, with a read-only
+    # filesystem and no Linux capabilities.
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
     env_file: .env
     environment:
       NONTON_DATA: /data

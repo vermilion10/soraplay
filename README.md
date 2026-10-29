@@ -41,7 +41,7 @@ cp .env.example .env    # fill in the client and NONTON_PUBLIC_URL
 docker compose up -d --build
 ```
 
-The compose file publishes the app on `127.0.0.1:8787` only. To reach it from your other devices over Tailscale with HTTPS (needed for installing it as an app on a phone), run on the server:
+The compose file runs the app as user `1000:1000` (change it to the owner of the folder holding `data/`) and publishes it on `127.0.0.1:8787` only. To reach it from your other devices over Tailscale with HTTPS (needed for installing it as an app on a phone), run on the server:
 
 ```bash
 tailscale serve --bg 8787
