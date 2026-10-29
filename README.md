@@ -3,9 +3,10 @@
 A self-hosted web app for watching anime with Indonesian subtitles, synced with your AniList account.
 
 - Your AniList Watching list on the home page, with the next episode one tap away.
+- A small AniList client around it: a weekly airing schedule in your own time zone, season browsing (any season, sorted by popularity, score or trend, filtered by format), and your full list by status with a title filter, one-tap +1 and an editor for status, progress, score, rewatches and dates. Anime pages show related seasons and AniList users' recommendations.
 - Episodes stream with Indonesian subtitles burned in and play in the browser on phones, PCs and TVs. Regular anime comes from Source A (720p). Entries AniList marks as adult come from Source E; set `SOURCE_E_BASE=off` to turn that off.
 - Finishing an episode (85% watched) updates your progress on AniList. Updates are queued, so a dropped connection or an AniList rate limit never loses one.
-- The next two unwatched episodes of shows you watched in the last two weeks are saved on the server ahead of time, so they start instantly and play even when the source is down. Saved episodes are deleted once watched. Adult titles are never saved.
+- The next two unwatched episodes of shows you watched in the last two weeks are saved on the server ahead of time, so they start instantly and play even when the source is down. Saved episodes are deleted once watched, and the Saved episodes page (in the account menu) shows what is on disk. Adult titles are never saved.
 - Shows on your Watching list are checked for new episodes every 30 minutes; new ones appear on the home page and, with a Discord webhook set, as a message.
 - Playback position is saved on the server, so an episode started on one device resumes on another. Intros and endings can be skipped using AniSkip timestamps.
 - Each AniList entry is matched to the right show on the source automatically. When a match is wrong or missing, pick the show by hand and set an episode offset for sources that number split seasons continuously.
