@@ -10,7 +10,7 @@ A self-hosted web app for watching anime with Indonesian subtitles, synced with 
 
 ## Requirements
 
-- Go 1.25 or later
+- Go 1.26 or later
 - Node.js 22 or later (to build the web frontend)
 - An AniList account
 
