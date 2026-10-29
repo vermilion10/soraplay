@@ -3,10 +3,10 @@
 A self-hosted web app for watching anime with Indonesian subtitles, synced with your AniList account.
 
 - Your AniList Watching list on the home page, with the next episode one tap away.
-- Episodes stream from Source A (720p, Indonesian subtitles burned in) and play in the browser on phones, PCs and TVs.
+- Episodes stream with Indonesian subtitles burned in and play in the browser on phones, PCs and TVs. Regular anime comes from Source A (720p). Entries AniList marks as adult come from Source E; set `SOURCE_E_BASE=off` to turn that off.
 - Finishing an episode (85% watched) updates your progress on AniList. Updates are queued, so a dropped connection or an AniList rate limit never loses one.
 - Each AniList entry is matched to the right show on the source automatically. When a match is wrong or missing, pick the show by hand and set an episode offset for sources that number split seasons continuously.
-- No ads and no tracking. The video plays straight from the source's CDN; the server only finds the stream link.
+- No ads and no tracking. Source A video plays straight from the source's CDN. Source E's video host only serves the client that requested the stream, so those streams are relayed through the server (signed URLs, about 0.5 Mbps per viewer).
 
 ## Requirements
 
@@ -58,7 +58,8 @@ The app is then at `https://<machine>.<tailnet>.ts.net`; use that as `NONTON_PUB
 | `ANILIST_CLIENT_SECRET` | | AniList API client secret |
 | `NONTON_ADDR` | `:8787` | Listen address |
 | `NONTON_DATA` | `data` | Folder for the SQLite database |
-| `SOURCE_A_BASE` | `https://source-a.example` | Source site address, for when its domain changes |
+| `SOURCE_A_BASE` | `https://source-a.example` | Source for regular anime, for when its domain changes |
+| `SOURCE_E_BASE` | `https://source-e.example` | Source for adult entries; `off` sends them to Source A |
 
 ## Access
 
