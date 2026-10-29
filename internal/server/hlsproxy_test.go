@@ -1,6 +1,8 @@
 package server
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"path/filepath"
 	"strings"
@@ -59,4 +61,10 @@ func TestRelaySignatureIsStable(t *testing.T) {
 	if s2.sign("https://cdn.example/x") != a {
 		t.Fatal("key not persisted")
 	}
+}
+
+func httptestRecorder(h http.Handler, path string) int {
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+	return rec.Code
 }

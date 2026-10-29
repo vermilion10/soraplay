@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log"
 	"math"
 	"net/http"
@@ -249,40 +251,21 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	// Match here too: the player can be opened straight from the home page
-	// for an anime whose page was never visited.
-	mp, _, err := s.mapping(ctx, p, m)
-	if err != nil {
-		writeErr(w, http.StatusBadGateway, err.Error())
-		return
-	}
-	if mp == nil {
-		writeErr(w, http.StatusNotFound, "this anime is not linked to a source yet")
-		return
-	}
-	pa, err := s.providerAnime(ctx, p, mp.ProviderID)
-	if err != nil {
-		writeErr(w, http.StatusBadGateway, err.Error())
-		return
-	}
-	var pe *provider.Episode
-	for i := range pa.Episodes {
-		if pa.Episodes[i].Number == ep+mp.EpOffset {
-			pe = &pa.Episodes[i]
+	var title string
+	var streams []provider.Stream
+	if local := s.savedStream(ctx, m.ID, ep); local != nil {
+		title, streams = fmt.Sprintf("Episode %g", ep), []provider.Stream{*local}
+	} else {
+		var status int
+		title, streams, status, err = s.sourceStreams(ctx, m, p, ep)
+		if err != nil {
+			writeErr(w, status, err.Error())
+			return
 		}
-	}
-	if pe == nil {
-		writeErr(w, http.StatusNotFound, "episode is not on the source yet")
-		return
-	}
-	streams, err := p.Streams(ctx, *pe)
-	if err != nil {
-		writeErr(w, http.StatusBadGateway, err.Error())
-		return
-	}
-	for i := range streams {
-		if streams[i].Relay || s.Cfg.RelayAll {
-			streams[i].URL = s.relayURL(streams[i].URL)
+		for i := range streams {
+			if streams[i].Relay || s.Cfg.RelayAll {
+				streams[i].URL = s.relayURL(streams[i].URL)
+			}
 		}
 	}
 	resume, err := s.Store.Position(ctx, m.ID, ep)
@@ -290,7 +273,35 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"episode": ep, "title": pe.Title, "streams": streams, "resume": resume})
+	writeJSON(w, http.StatusOK, map[string]any{"episode": ep, "title": title, "streams": streams, "resume": resume})
+}
+
+// sourceStreams resolves episode ep (AniList numbering) of m on its source.
+// On failure it also returns the HTTP status that fits the error.
+func (s *Server) sourceStreams(ctx context.Context, m *anilist.Media, p provider.Provider, ep float64) (string, []provider.Stream, int, error) {
+	// Match here too: the player can be opened straight from the home page
+	// for an anime whose page was never visited.
+	mp, _, err := s.mapping(ctx, p, m)
+	if err != nil {
+		return "", nil, http.StatusBadGateway, err
+	}
+	if mp == nil {
+		return "", nil, http.StatusNotFound, errors.New("this anime is not linked to a source yet")
+	}
+	pa, err := s.providerAnime(ctx, p, mp.ProviderID)
+	if err != nil {
+		return "", nil, http.StatusBadGateway, err
+	}
+	for _, e := range pa.Episodes {
+		if e.Number == ep+mp.EpOffset {
+			streams, err := p.Streams(ctx, e)
+			if err != nil {
+				return "", nil, http.StatusBadGateway, err
+			}
+			return e.Title, streams, http.StatusOK, nil
+		}
+	}
+	return "", nil, http.StatusNotFound, errors.New("episode is not on the source yet")
 }
 
 // progress queues "episode watched" for AniList. The worker sends it.

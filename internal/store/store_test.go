@@ -121,3 +121,24 @@ func TestMigrateAddsColumn(t *testing.T) {
 		t.Fatalf("old database did not get grew_at: %+v", all[1])
 	}
 }
+
+func TestDownloads(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+	if ok, _ := s.HasDownload(ctx, 1, 1); ok {
+		t.Fatal("empty store has a download")
+	}
+	s.AddDownload(ctx, 1, 1, 100)
+	s.AddDownload(ctx, 2, 5, 200)
+	if ok, err := s.HasDownload(ctx, 1, 1); !ok || err != nil {
+		t.Fatalf("HasDownload = %v, %v", ok, err)
+	}
+	ds, err := s.Downloads(ctx)
+	if err != nil || len(ds) != 2 || ds[0].Bytes+ds[1].Bytes != 300 {
+		t.Fatalf("downloads = %+v, %v", ds, err)
+	}
+	s.RemoveDownload(ctx, 2, 5)
+	if ds, _ := s.Downloads(ctx); len(ds) != 1 || ds[0].AnilistID != 1 {
+		t.Fatalf("after remove = %+v", ds)
+	}
+}

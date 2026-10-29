@@ -71,6 +71,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/anime/{id}/episodes/{ep}/position", s.savePosition)
 	mux.HandleFunc("GET /api/anime/{id}/episodes/{ep}/skip", s.skipTimes)
 	mux.HandleFunc("GET /api/relay", s.relay)
+	mux.HandleFunc("GET /media/{id}/{ep}/{file}", s.media)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "no such endpoint")
 	})

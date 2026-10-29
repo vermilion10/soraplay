@@ -5,6 +5,7 @@ package config
 import (
 	"bufio"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -21,6 +22,10 @@ type Config struct {
 	RelayAll bool
 	// DiscordWebhook receives a message when a new episode is up; empty disables it.
 	DiscordWebhook string
+	// PrefetchDir is where upcoming episodes are saved; empty disables saving.
+	PrefetchDir   string
+	PrefetchMaxGB int // size cap for saved episodes
+	PrefetchAhead int // unwatched episodes to keep saved per show
 }
 
 func Load() Config {
@@ -35,11 +40,21 @@ func Load() Config {
 		SourceEBase:    env("SOURCE_E_BASE", "https://source-e.example"),
 		RelayAll:       env("RELAY_ALL", "") == "1",
 		DiscordWebhook: env("DISCORD_WEBHOOK_URL", ""),
+		PrefetchDir:    env("PREFETCH_DIR", ""),
+		PrefetchMaxGB:  envInt("PREFETCH_MAX_GB", 30),
+		PrefetchAhead:  envInt("PREFETCH_AHEAD", 2),
 	}
 }
 
 // RedirectURI is the OAuth callback registered with the AniList client.
 func (c Config) RedirectURI() string { return c.PublicURL + "/auth/callback" }
+
+func envInt(key string, def int) int {
+	if n, err := strconv.Atoi(env(key, "")); err == nil && n > 0 {
+		return n
+	}
+	return def
+}
 
 func env(key, def string) string {
 	if v, ok := os.LookupEnv(key); ok && v != "" {

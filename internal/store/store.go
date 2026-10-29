@@ -32,6 +32,14 @@ CREATE TABLE IF NOT EXISTS availability (
 	checked_at INTEGER NOT NULL,
 	grew_at    INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS downloads (
+	anilist_id INTEGER NOT NULL,
+	episode    REAL    NOT NULL,
+	bytes      INTEGER NOT NULL,
+	saved_at   INTEGER NOT NULL,
+	used_at    INTEGER NOT NULL,
+	PRIMARY KEY (anilist_id, episode)
+);
 CREATE TABLE IF NOT EXISTS positions (
 	anilist_id INTEGER NOT NULL,
 	episode    REAL    NOT NULL,
@@ -311,6 +319,61 @@ func (s *Store) AllAvailability(ctx context.Context) (map[int]Availability, erro
 			a.GrewAt = time.Unix(grew, 0)
 		}
 		out[id] = a
+	}
+	return out, rows.Err()
+}
+
+// Download is an episode saved to disk.
+type Download struct {
+	AnilistID int
+	Episode   float64
+	Bytes     int64
+	SavedAt   time.Time
+	UsedAt    time.Time // last played, or SavedAt
+}
+
+func (s *Store) AddDownload(ctx context.Context, anilistID int, episode float64, bytes int64) error {
+	now := time.Now().Unix()
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO downloads (anilist_id, episode, bytes, saved_at, used_at) VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT (anilist_id, episode) DO UPDATE SET bytes = excluded.bytes, saved_at = excluded.saved_at, used_at = excluded.used_at`,
+		anilistID, episode, bytes, now, now)
+	return err
+}
+
+// HasDownload reports whether an episode is saved, and marks it used.
+func (s *Store) HasDownload(ctx context.Context, anilistID int, episode float64) (bool, error) {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE downloads SET used_at = ? WHERE anilist_id = ? AND episode = ?`, time.Now().Unix(), anilistID, episode)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
+func (s *Store) RemoveDownload(ctx context.Context, anilistID int, episode float64) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM downloads WHERE anilist_id = ? AND episode = ?`, anilistID, episode)
+	return err
+}
+
+// Downloads returns every saved episode, least recently used first.
+func (s *Store) Downloads(ctx context.Context) ([]Download, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT anilist_id, episode, bytes, saved_at, used_at FROM downloads ORDER BY used_at, saved_at`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Download
+	for rows.Next() {
+		var d Download
+		var saved, used int64
+		if err := rows.Scan(&d.AnilistID, &d.Episode, &d.Bytes, &saved, &used); err != nil {
+			return nil, err
+		}
+		d.SavedAt, d.UsedAt = time.Unix(saved, 0), time.Unix(used, 0)
+		out = append(out, d)
 	}
 	return out, rows.Err()
 }
