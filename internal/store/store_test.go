@@ -76,3 +76,18 @@ func TestPositions(t *testing.T) {
 		t.Fatalf("latest = %+v, %v", latest, err)
 	}
 }
+
+func TestAvailability(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+	if prev, err := s.SetAvailability(ctx, 5, 3); err != nil || prev != 0 {
+		t.Fatalf("first set: prev %v, %v", prev, err)
+	}
+	if prev, _ := s.SetAvailability(ctx, 5, 4); prev != 3 {
+		t.Fatalf("second set: prev %v; want 3", prev)
+	}
+	all, err := s.AllAvailability(ctx)
+	if err != nil || all[5].LatestEp != 4 || all[5].CheckedAt.IsZero() {
+		t.Fatalf("all = %+v, %v", all, err)
+	}
+}

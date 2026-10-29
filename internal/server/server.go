@@ -243,15 +243,25 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	avail, err := s.Store.AllAvailability(r.Context())
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	type listItemJSON struct {
 		anilist.ListItem
 		Resume *store.Position `json:"resume"`
+		// Available is the newest episode on the source at the last check.
+		Available *float64 `json:"available"`
 	}
 	out := make([]listItemJSON, 0, len(items))
 	for _, it := range items {
 		li := listItemJSON{ListItem: it}
 		if p, ok := latest[it.Media.ID]; ok {
 			li.Resume = &p
+		}
+		if a, ok := avail[it.Media.ID]; ok {
+			li.Available = &a.LatestEp
 		}
 		out = append(out, li)
 	}

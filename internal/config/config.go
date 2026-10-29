@@ -19,19 +19,22 @@ type Config struct {
 	// RelayAll sends every stream through the server, so video hosts never
 	// see the viewer's address or this app's Origin.
 	RelayAll bool
+	// DiscordWebhook receives a message when a new episode is up; empty disables it.
+	DiscordWebhook string
 }
 
 func Load() Config {
 	loadDotEnv(".env")
 	return Config{
-		Addr:          env("NONTON_ADDR", ":8787"),
-		DataDir:       env("NONTON_DATA", "data"),
-		PublicURL:     strings.TrimRight(env("NONTON_PUBLIC_URL", "http://localhost:8787"), "/"),
-		ClientID:      env("ANILIST_CLIENT_ID", ""),
-		ClientSecret:  env("ANILIST_CLIENT_SECRET", ""),
-		SourceABase: env("SOURCE_A_BASE", "https://source-a.example"),
-		SourceEBase:   env("SOURCE_E_BASE", "https://source-e.example"),
-		RelayAll:      env("RELAY_ALL", "") == "1",
+		Addr:           env("NONTON_ADDR", ":8787"),
+		DataDir:        env("NONTON_DATA", "data"),
+		PublicURL:      strings.TrimRight(env("NONTON_PUBLIC_URL", "http://localhost:8787"), "/"),
+		ClientID:       env("ANILIST_CLIENT_ID", ""),
+		ClientSecret:   env("ANILIST_CLIENT_SECRET", ""),
+		SourceABase:  env("SOURCE_A_BASE", "https://source-a.example"),
+		SourceEBase:    env("SOURCE_E_BASE", "https://source-e.example"),
+		RelayAll:       env("RELAY_ALL", "") == "1",
+		DiscordWebhook: env("DISCORD_WEBHOOK_URL", ""),
 	}
 }
 

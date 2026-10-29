@@ -5,6 +5,8 @@ A self-hosted web app for watching anime with Indonesian subtitles, synced with 
 - Your AniList Watching list on the home page, with the next episode one tap away.
 - Episodes stream with Indonesian subtitles burned in and play in the browser on phones, PCs and TVs. Regular anime comes from Source A (720p). Entries AniList marks as adult come from Source E; set `SOURCE_E_BASE=off` to turn that off.
 - Finishing an episode (85% watched) updates your progress on AniList. Updates are queued, so a dropped connection or an AniList rate limit never loses one.
+- Shows on your Watching list are checked for new episodes every 30 minutes; new ones appear on the home page and, with a Discord webhook set, as a message.
+- Playback position is saved on the server, so an episode started on one device resumes on another. Intros and endings can be skipped using AniSkip timestamps.
 - Each AniList entry is matched to the right show on the source automatically. When a match is wrong or missing, pick the show by hand and set an episode offset for sources that number split seasons continuously.
 - No ads and no tracking. Source A video plays straight from the source's CDN. Source E's video host only serves the client that requested the stream, so those streams are relayed through the server (signed URLs, about 0.5 Mbps per viewer).
 
@@ -60,6 +62,7 @@ The app is then at `https://<machine>.<tailnet>.ts.net`; use that as `NONTON_PUB
 | `NONTON_DATA` | `data` | Folder for the SQLite database |
 | `SOURCE_A_BASE` | `https://source-a.example` | Source for regular anime, for when its domain changes |
 | `SOURCE_E_BASE` | `https://source-e.example` | Source for adult entries; `off` sends them to Source A |
+| `DISCORD_WEBHOOK_URL` | (off) | Discord webhook that gets a message when a new episode of a show you are watching is up |
 | `RELAY_ALL` | (off) | `1` relays every stream through the server, so video hosts see neither the viewer's address nor the app's `Origin` header (costs the server's upload bandwidth when watching away from home) |
 
 ## Access

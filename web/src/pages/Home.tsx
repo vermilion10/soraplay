@@ -50,6 +50,9 @@ function Watching() {
     return <ErrorBox title="Could not load your Watching list." error={list.error} onRetry={() => list.refetch()} />
 
   const [first, ...rest] = list.data
+  const hasNew = (it: ListItem) => it.available !== null && it.available > it.progress
+  const fresh = rest.filter(hasNew)
+  const others = rest.filter((it) => !hasNew(it))
   if (!first)
     return (
       <Empty>
@@ -62,14 +65,25 @@ function Watching() {
     <section className="my-4">
       <h2 className="sr-only">Continue watching</h2>
       <ContinueCard item={first} />
-      {rest.length > 0 && (
+      {fresh.length > 0 && (
+        <div className="mt-8">
+          <h2 className="mb-3 font-display text-xl font-semibold">New episodes</h2>
+          <PosterGrid items={fresh.map((it) => ({ media: it.media, note: newNote(it) }))} />
+        </div>
+      )}
+      {others.length > 0 && (
         <div className="mt-8">
           <h2 className="mb-3 font-display text-xl font-semibold text-muted">Also watching</h2>
-          <PosterGrid items={rest.map((it) => ({ media: it.media, note: progressNote(it) }))} />
+          <PosterGrid items={others.map((it) => ({ media: it.media, note: progressNote(it) }))} />
         </div>
       )}
     </section>
   )
+}
+
+function newNote(it: ListItem): string {
+  const n = Math.floor(it.available! - it.progress)
+  return n === 1 ? `EP ${it.available} is up` : `${n} new, up to EP ${it.available}`
 }
 
 function progressNote(it: ListItem): string {
@@ -85,6 +99,8 @@ function ContinueCard({ item }: { item: ListItem }) {
   // An episode past the AniList progress that was left halfway, maybe on another device.
   const resume = resumable(item.resume) && item.resume.episode > item.progress ? item.resume : null
   const notOutYet = next !== null && m.nextAiringEpisode !== null && next >= m.nextAiringEpisode.episode
+  // Aired, but the source has not uploaded it yet (as of the server's last check).
+  const notUpYet = !notOutYet && next !== null && item.available !== null && next > item.available
   const tint = m.coverImage.color || '#3a302a'
 
   return (
@@ -114,6 +130,8 @@ function ContinueCard({ item }: { item: ListItem }) {
               </Link>
             ) : next === null ? (
               <p className="text-sm">All episodes watched.</p>
+            ) : notUpYet ? (
+              <p className="text-sm">Episode {next} has aired but is not up on the source yet.</p>
             ) : notOutYet ? (
               <p className="text-sm">
                 Episode {next} airs {airsIn(m.nextAiringEpisode!.airingAt)}.

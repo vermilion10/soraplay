@@ -26,6 +26,11 @@ CREATE TABLE IF NOT EXISTS mappings (
 	updated_at  INTEGER NOT NULL,
 	PRIMARY KEY (anilist_id, provider)
 );
+CREATE TABLE IF NOT EXISTS availability (
+	anilist_id INTEGER PRIMARY KEY,
+	latest_ep  REAL    NOT NULL,
+	checked_at INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS positions (
 	anilist_id INTEGER NOT NULL,
 	episode    REAL    NOT NULL,
@@ -232,6 +237,48 @@ func (s *Store) LatestPositions(ctx context.Context) (map[int]Position, error) {
 			return nil, err
 		}
 		out[p.AnilistID] = p
+	}
+	return out, rows.Err()
+}
+
+// Availability is the newest episode a source had when last checked.
+type Availability struct {
+	LatestEp  float64
+	CheckedAt time.Time
+}
+
+// SetAvailability records the newest episode on the source and returns
+// the value it replaces (0 if the anime was never checked).
+func (s *Store) SetAvailability(ctx context.Context, anilistID int, latest float64) (float64, error) {
+	var prev float64
+	err := s.db.QueryRowContext(ctx, `SELECT latest_ep FROM availability WHERE anilist_id = ?`, anilistID).Scan(&prev)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return 0, err
+	}
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO availability (anilist_id, latest_ep, checked_at) VALUES (?, ?, ?)
+		ON CONFLICT (anilist_id) DO UPDATE SET latest_ep = excluded.latest_ep, checked_at = excluded.checked_at`,
+		anilistID, latest, time.Now().Unix())
+	return prev, err
+}
+
+// AllAvailability returns every recorded availability, by AniList ID.
+func (s *Store) AllAvailability(ctx context.Context) (map[int]Availability, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT anilist_id, latest_ep, checked_at FROM availability`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int]Availability{}
+	for rows.Next() {
+		var id int
+		var a Availability
+		var at int64
+		if err := rows.Scan(&id, &a.LatestEp, &at); err != nil {
+			return nil, err
+		}
+		a.CheckedAt = time.Unix(at, 0)
+		out[id] = a
 	}
 	return out, rows.Err()
 }
