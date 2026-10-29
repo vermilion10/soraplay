@@ -2,6 +2,5 @@ bin/
 *.exe
 data/
 .env
-web/dist/*
-!web/dist/.keep
+web/dist/
 web/node_modules/
