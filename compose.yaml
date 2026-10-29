@@ -1,0 +1,14 @@
+services:
+  nonton:
+    build: .
+    image: nonton:latest
+    container_name: nonton
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NONTON_DATA: /data
+    volumes:
+      - ./data:/data
+    ports:
+      # Bound to localhost only; expose it with `tailscale serve` (see README).
+      - "127.0.0.1:8787:8787"
