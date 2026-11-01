@@ -28,16 +28,19 @@ type Server struct {
 	Provider provider.Provider
 	// AdultProvider serves AniList entries marked adult; nil sends them to Provider.
 	AdultProvider provider.Provider
-	Progress      *progress.Worker
-	AniSkip       *aniskip.Client
-	Static        fs.FS // built frontend; index.html is served for unknown paths
+	// Fallback is a second source for regular anime, used when Provider
+	// lacks a show or episode, or picked by hand; nil turns it off.
+	Fallback provider.Provider
+	Progress *progress.Worker
+	AniSkip  *aniskip.Client
+	Static   fs.FS // built frontend; index.html is served for unknown paths
 
 	relayOnce     sync.Once
 	relayKeyBytes []byte
 
 	mu        sync.Mutex
-	animeMemo map[string]memo // provider anime pages, keyed by provider ID
-	missMemo  map[int]time.Time
+	animeMemo map[string]memo       // provider anime pages, keyed by provider ID
+	missMemo  map[string]time.Time  // failed automatic matches, by provider/anime
 	brokenEps map[wantKey]time.Time // episodes the saver found broken at the source
 }
 
@@ -53,7 +56,7 @@ const (
 
 func (s *Server) Handler() http.Handler {
 	s.animeMemo = map[string]memo{}
-	s.missMemo = map[int]time.Time{}
+	s.missMemo = map[string]time.Time{}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /auth/login", s.login)

@@ -17,6 +17,7 @@ type Config struct {
 	ClientSecret  string
 	SourceABase string
 	SourceEBase   string // source for adult entries; "off" disables it
+	FallbackBase  string // source-b.example, tried when Source A lacks an episode; "off" disables it
 	// RelayAll sends every stream through the server, so video hosts never
 	// see the viewer's address or this app's Origin.
 	RelayAll bool
@@ -38,6 +39,7 @@ func Load() Config {
 		ClientSecret:   env("ANILIST_CLIENT_SECRET", ""),
 		SourceABase:  env("SOURCE_A_BASE", "https://source-a.example"),
 		SourceEBase:    env("SOURCE_E_BASE", "https://source-e.example"),
+		FallbackBase:   env("SOURCE_B_BASE", "https://source-b.example"),
 		RelayAll:       env("RELAY_ALL", "") == "1",
 		DiscordWebhook: env("DISCORD_WEBHOOK_URL", ""),
 		PrefetchDir:    env("PREFETCH_DIR", ""),

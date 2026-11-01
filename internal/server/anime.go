@@ -45,16 +45,34 @@ type candidateJSON struct {
 	Score    float64 `json:"score"`
 }
 
-// providerFor picks the source for an anime: adult entries come from the
-// adult source when one is configured, everything else from the main one.
-func (s *Server) providerFor(m *anilist.Media) provider.Provider {
+// sources lists the sources for an anime, preferred first: adult entries
+// come from the adult source when one is configured, everything else from
+// the main one and then the fallback.
+func (s *Server) sources(m *anilist.Media) []provider.Provider {
 	if m.IsAdult && s.AdultProvider != nil {
-		return s.AdultProvider
+		return []provider.Provider{s.AdultProvider}
 	}
-	return s.Provider
+	if s.Fallback != nil {
+		return []provider.Provider{s.Provider, s.Fallback}
+	}
+	return []provider.Provider{s.Provider}
 }
 
-// animeAndProvider loads the AniList entry in the request path and its source.
+// providerFor is the preferred source for an anime.
+func (s *Server) providerFor(m *anilist.Media) provider.Provider {
+	return s.sources(m)[0]
+}
+
+func (s *Server) sourcesJSON(m *anilist.Media) []sourceJSON {
+	var out []sourceJSON
+	for _, p := range s.sources(m) {
+		out = append(out, sourceJSON{p.Name(), p.Label()})
+	}
+	return out
+}
+
+// animeAndProvider loads the AniList entry in the request path and the
+// source named by ?source=, or the preferred one.
 func (s *Server) animeAndProvider(w http.ResponseWriter, r *http.Request) (*anilist.Media, provider.Provider, bool) {
 	id, ok := pathID(r)
 	if !ok {
@@ -67,7 +85,21 @@ func (s *Server) animeAndProvider(w http.ResponseWriter, r *http.Request) (*anil
 		writeAniListErr(w, err)
 		return nil, nil, false
 	}
-	return m, s.providerFor(m), true
+	name := r.URL.Query().Get("source")
+	if name == "" {
+		return m, s.providerFor(m), true
+	}
+	for _, p := range s.sources(m) {
+		if p.Name() == name {
+			return m, p, true
+		}
+	}
+	writeErr(w, http.StatusBadRequest, "no source "+name+" for this anime")
+	return nil, nil, false
+}
+
+func missKey(p provider.Provider, id int) string {
+	return p.Name() + "/" + strconv.Itoa(id)
 }
 
 func (s *Server) providerAnime(ctx context.Context, p provider.Provider, id string) (*provider.Anime, error) {
@@ -96,7 +128,7 @@ func (s *Server) mapping(ctx context.Context, p provider.Provider, m *anilist.Me
 		return mp, nil, err
 	}
 	s.mu.Lock()
-	missAt, missed := s.missMemo[m.ID]
+	missAt, missed := s.missMemo[missKey(p, m.ID)]
 	s.mu.Unlock()
 	if missed && time.Since(missAt) < missTTL {
 		return nil, nil, nil
@@ -113,17 +145,35 @@ func (s *Server) mapping(ctx context.Context, p provider.Provider, m *anilist.Me
 		return mp, nil, nil
 	}
 	s.mu.Lock()
-	s.missMemo[m.ID] = time.Now()
+	s.missMemo[missKey(p, m.ID)] = time.Now()
 	s.mu.Unlock()
 	return nil, cands, nil
 }
 
+// anime is the anime page: the AniList entry and its episodes on a source.
+// Without ?source=, a show the preferred source lacks (or has no episodes
+// of) is shown from the next source that has it.
 func (s *Server) anime(w http.ResponseWriter, r *http.Request) {
 	m, p, ok := s.animeAndProvider(w, r)
 	if !ok {
 		return
 	}
-	ctx := r.Context()
+	resp, found := s.animeOn(r.Context(), m, p)
+	if r.URL.Query().Get("source") == "" && !found {
+		for _, alt := range s.sources(m)[1:] {
+			if other, ok := s.animeOn(r.Context(), m, alt); ok {
+				resp = other
+				break
+			}
+		}
+	}
+	resp["sources"] = s.sourcesJSON(m)
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// animeOn describes m on source p; found reports whether p has episodes of it.
+func (s *Server) animeOn(ctx context.Context, m *anilist.Media, p provider.Provider) (map[string]any, bool) {
+	found := false
 	resp := map[string]any{
 		"media":    m,
 		"source":   sourceJSON{p.Name(), p.Label()},
@@ -151,9 +201,10 @@ func (s *Server) anime(w http.ResponseWriter, r *http.Request) {
 		}
 		if eps != nil {
 			resp["episodes"] = eps
+			found = true
 		}
 	}
-	writeJSON(w, http.StatusOK, resp)
+	return resp, found
 }
 
 func candidatesJSON(cs []match.Candidate, limit int) []candidateJSON {
@@ -219,7 +270,7 @@ func (s *Server) saveMapping(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mu.Lock()
-	delete(s.missMemo, m.ID)
+	delete(s.missMemo, missKey(p, m.ID))
 	s.mu.Unlock()
 	writeJSON(w, http.StatusOK, mappingJSON{mp.ProviderID, mp.Title, mp.EpOffset, mp.Manual})
 }
@@ -235,7 +286,7 @@ func (s *Server) deleteMapping(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mu.Lock()
-	delete(s.missMemo, m.ID)
+	delete(s.missMemo, missKey(p, m.ID))
 	s.mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
@@ -251,15 +302,34 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	named := r.URL.Query().Get("source") != ""
 	var title string
 	var streams []provider.Stream
-	if local := s.savedStream(ctx, m.ID, ep); local != nil {
+	used := sourceJSON{"saved", "Saved on the homelab"}
+	if local := s.savedStream(ctx, m.ID, ep); local != nil && !named {
 		title, streams = fmt.Sprintf("Episode %g", ep), []provider.Stream{*local}
 	} else {
-		var status int
-		title, streams, status, err = s.sourceStreams(ctx, m, p, ep)
-		if err != nil {
-			writeErr(w, status, err.Error())
+		// A named source is used alone; otherwise each source is tried in
+		// turn, and the preferred source's error is the one reported.
+		try := []provider.Provider{p}
+		if !named {
+			try = s.sources(m)
+		}
+		var firstErr error
+		firstStatus := 0
+		for _, src := range try {
+			t, sts, status, err := s.sourceStreams(ctx, m, src, ep)
+			if err == nil {
+				title, streams, used = t, sts, sourceJSON{src.Name(), src.Label()}
+				break
+			}
+			if firstErr == nil {
+				firstErr, firstStatus = err, status
+			}
+			log.Printf("stream: anime %d ep %g on %s: %v", m.ID, ep, src.Name(), err)
+		}
+		if streams == nil {
+			writeErr(w, firstStatus, firstErr.Error())
 			return
 		}
 		for i := range streams {
@@ -273,7 +343,10 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"episode": ep, "title": title, "streams": streams, "resume": resume})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"episode": ep, "title": title, "streams": streams, "resume": resume,
+		"source": used, "sources": s.sourcesJSON(m),
+	})
 }
 
 // sourceStreams resolves episode ep (AniList numbering) of m on its source.

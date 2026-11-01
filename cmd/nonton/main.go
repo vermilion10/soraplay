@@ -20,6 +20,7 @@ import (
 	"github.com/vermilion10/nonton/internal/progress"
 	"github.com/vermilion10/nonton/internal/provider"
 	"github.com/vermilion10/nonton/internal/provider/sourcee"
+	"github.com/vermilion10/nonton/internal/provider/sourceb"
 	"github.com/vermilion10/nonton/internal/provider/sourcea"
 	"github.com/vermilion10/nonton/internal/server"
 	"github.com/vermilion10/nonton/internal/store"
@@ -42,6 +43,10 @@ func main() {
 	if cfg.SourceEBase != "off" {
 		adult = sourcee.New(cfg.SourceEBase, httpc.New())
 	}
+	var fallback provider.Provider
+	if cfg.FallbackBase != "off" {
+		fallback = sourceb.New(cfg.FallbackBase, httpc.New())
+	}
 	worker := progress.NewWorker(st, al)
 	srv := &server.Server{
 		Cfg:           cfg,
@@ -49,6 +54,7 @@ func main() {
 		AniList:       al,
 		Provider:      sourcea.New(cfg.SourceABase, httpc.New()),
 		AdultProvider: adult,
+		Fallback:      fallback,
 		Progress:      worker,
 		AniSkip:       aniskip.New(),
 		Static:        web.Dist(),
