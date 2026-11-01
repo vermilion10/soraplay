@@ -11,6 +11,7 @@ import Schedule from './pages/Schedule'
 import Seasons from './pages/Seasons'
 import MyList from './pages/MyList'
 import Saved from './pages/Saved'
+import Captures from './pages/Captures'
 import { Loading, NotFound } from './components/States'
 
 // The player pulls in hls.js, the largest dependency; load it only when watching.
@@ -35,6 +36,7 @@ export default function App() {
           <Route path="seasons" element={<Seasons />} />
           <Route path="list" element={<MyList />} />
           <Route path="saved" element={<Saved />} />
+          <Route path="captures" element={<Captures />} />
           <Route path="search" element={<Search />} />
           <Route path="anime/:id" element={<Anime />} />
           <Route
@@ -141,6 +143,9 @@ function Account() {
         className="account-menu w-56 rounded-md border border-line bg-surface py-1 text-ink"
       >
         <p className="px-4 py-2 text-sm text-muted">{user.name}</p>
+        <Link to="/captures" className={item} onClick={hideMenu}>
+          Captures
+        </Link>
         <Link to="/saved" className={item} onClick={hideMenu}>
           Saved episodes
         </Link>

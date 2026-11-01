@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Hls from 'hls.js'
 import { api, clock, resumable, titleOf, type Interval, type Position, type SkipTimes } from '../lib/api'
+import { addCapture, grabFrame, useCaptures } from '../lib/captures'
 import { Empty, ErrorBox, Loading } from '../components/States'
 
 // Share of an episode that counts as watched. Past this point the end credits
@@ -50,6 +51,7 @@ export default function Watch() {
             key={stream.data.streams[0].url}
             src={stream.data.streams[0].url}
             animeId={id}
+            title={m ? titleOf(m) : ''}
             ep={ep}
             nextEp={next}
             syncProgress={!!me.data?.user}
@@ -89,7 +91,8 @@ export default function Watch() {
         </p>
       )}
       <p className="mt-4 text-xs text-muted">
-        Keys: Space play/pause · ← → seek · F fullscreen · S skip intro or ending{next !== undefined && ' · N next episode'}
+        Keys: Space play/pause · ← → seek · F fullscreen · C capture the scene · S skip intro or ending
+        {next !== undefined && ' · N next episode'}
       </p>
     </article>
   )
@@ -98,6 +101,7 @@ export default function Watch() {
 function Player({
   src,
   animeId,
+  title,
   ep,
   nextEp,
   syncProgress,
@@ -106,6 +110,7 @@ function Player({
 }: {
   src: string
   animeId: number
+  title: string
   ep: number
   nextEp?: number
   syncProgress: boolean
@@ -113,6 +118,7 @@ function Player({
   onExpired: () => void
 }) {
   const video = useRef<HTMLVideoElement>(null)
+  const frame = useRef<HTMLDivElement>(null)
   const sent = useRef(false)
   const lastSaved = useRef(0)
   const [status, setStatus] = useState('')
@@ -120,6 +126,11 @@ function Player({
   const [resumedAt, setResumedAt] = useState<number | null>(null)
   const [skip, setSkip] = useState<SkipTimes | null>(null)
   const [inPart, setInPart] = useState<'op' | 'ed' | null>(null)
+  const [shot, setShot] = useState<{ ok: boolean; text: string } | null>(null)
+  const [paused, setPaused] = useState(true)
+  const [awake, setAwake] = useState(false)
+  const [fullscreen, setFullscreen] = useState(false)
+  const held = useCaptures()?.length ?? 0
   const qc = useQueryClient()
   const navigate = useNavigate()
   // Held in a ref: the parent passes a new function on every render, and the
@@ -163,6 +174,24 @@ function Player({
   }
   const saveRef = useRef(savePosition)
   saveRef.current = savePosition
+
+  useEffect(() => {
+    if (!shot) return
+    const t = setTimeout(() => setShot(null), 3500)
+    return () => clearTimeout(t)
+  }, [shot])
+
+  useEffect(() => {
+    if (!awake) return
+    const t = setTimeout(() => setAwake(false), 2500)
+    return () => clearTimeout(t)
+  }, [awake])
+
+  useEffect(() => {
+    const on = () => setFullscreen(!!document.fullscreenElement)
+    document.addEventListener('fullscreenchange', on)
+    return () => document.removeEventListener('fullscreenchange', on)
+  }, [])
 
   useEffect(() => {
     const onHide = () => saveRef.current(true)
@@ -211,6 +240,52 @@ function Player({
       })
   }
 
+  // Captures the frame on screen; it is kept in this browser until saved.
+  async function capture() {
+    const v = video.current
+    if (!v) return
+    const time = v.currentTime
+    try {
+      const blob = await grabFrame(v)
+      await addCapture({
+        id: crypto.randomUUID(),
+        blob,
+        animeId,
+        title,
+        episode: ep,
+        time,
+        capturedAt: Date.now(),
+        width: v.videoWidth,
+        height: v.videoHeight,
+      })
+      setShot({ ok: true, text: `Captured ${clock(time)}` })
+    } catch (e) {
+      setShot({ ok: false, text: e instanceof Error ? e.message : 'Capture failed.' })
+    }
+  }
+  const captureRef = useRef(capture)
+  captureRef.current = capture
+
+  // Fullscreen covers the player frame rather than the bare video, so the
+  // capture and skip buttons stay on screen. iPhones only allow the video
+  // itself to go fullscreen.
+  function toggleFullscreen() {
+    const f = frame.current
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {})
+      return
+    }
+    if (f?.requestFullscreen) {
+      f.requestFullscreen()
+        .then(() => (screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> }).lock?.('landscape'))
+        .catch(() => {})
+    } else {
+      ;(video.current as (HTMLVideoElement & { webkitEnterFullscreen?: () => void }) | null)?.webkitEnterFullscreen?.()
+    }
+  }
+  const fullscreenRef = useRef(toggleFullscreen)
+  fullscreenRef.current = toggleFullscreen
+
   // Skipping the ending goes to the next episode when there is one.
   function skipPart() {
     const v = video.current
@@ -251,8 +326,10 @@ function Player({
           v.currentTime = Math.min(v.duration || Infinity, v.currentTime + 10)
           break
         case 'f':
-          if (document.fullscreenElement) document.exitFullscreen()
-          else v.requestFullscreen?.()
+          fullscreenRef.current()
+          break
+        case 'c':
+          captureRef.current()
           break
         case 's':
           skipRef.current()
@@ -273,25 +350,73 @@ function Player({
           <ErrorBox title="The video stopped." error={error} onRetry={onExpired} />
         </div>
       ) : (
-        <div className="relative">
-        <video
-          ref={video}
-          controls
-          playsInline
-          onLoadedMetadata={onLoaded}
-          onTimeUpdate={onTime}
-          onPause={() => savePosition()}
-          className="aspect-video w-full bg-black"
-        />
-        {inPart && (
-          <button
-            type="button"
-            onClick={skipPart}
-            className="absolute right-3 bottom-16 min-h-11 rounded-md border border-line bg-surface/90 px-4 text-sm font-medium hover:border-muted"
+        <div
+          ref={frame}
+          className="player relative"
+          onPointerMove={() => setAwake(true)}
+          onPointerDown={() => setAwake(true)}
+        >
+          <video
+            ref={video}
+            controls
+            playsInline
+            // Lets a natively played cross-origin stream be read for captures.
+            crossOrigin="anonymous"
+            // The player's own fullscreen button below replaces this one.
+            controlsList="nofullscreen"
+            onLoadedMetadata={onLoaded}
+            onTimeUpdate={onTime}
+            onPlay={() => setPaused(false)}
+            onPause={() => {
+              setPaused(true)
+              savePosition()
+            }}
+            className="aspect-video w-full bg-black"
+          />
+          {/* Shown while paused or for a moment after the pointer moves, like the native controls. */}
+          <div
+            className={`absolute top-2 right-2 flex gap-1 transition-opacity ${
+              paused || awake || shot ? 'opacity-100' : 'pointer-events-none opacity-0'
+            }`}
           >
-            {inPart === 'op' ? 'Skip intro' : nextEp !== undefined ? 'Next episode' : 'Skip ending'}
-          </button>
-        )}
+            <button
+              type="button"
+              onClick={capture}
+              className="min-h-11 rounded-md bg-black/70 px-3 text-sm font-medium text-ink hover:bg-black/90"
+            >
+              Capture
+            </button>
+            <button
+              type="button"
+              onClick={toggleFullscreen}
+              className="min-h-11 rounded-md bg-black/70 px-3 text-sm font-medium text-ink hover:bg-black/90"
+            >
+              {fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+            </button>
+          </div>
+          {shot && (
+            <p role="status" className="absolute top-16 right-2 max-w-[80%] rounded-md bg-black/80 px-3 py-2 text-sm text-ink">
+              {shot.text}
+              {shot.ok && !fullscreen && (
+                <>
+                  {' · '}
+                  <Link to="/captures" className="underline">
+                    {held} held, view them
+                  </Link>
+                </>
+              )}
+              {shot.ok && fullscreen && ` · ${held} held`}
+            </p>
+          )}
+          {inPart && (
+            <button
+              type="button"
+              onClick={skipPart}
+              className="absolute right-3 bottom-16 min-h-11 rounded-md border border-line bg-surface/90 px-4 text-sm font-medium hover:border-muted"
+            >
+              {inPart === 'op' ? 'Skip intro' : nextEp !== undefined ? 'Next episode' : 'Skip ending'}
+            </button>
+          )}
         </div>
       )}
       {resumedAt !== null && (

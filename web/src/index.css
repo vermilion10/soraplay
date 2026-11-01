@@ -45,3 +45,14 @@ dialog::backdrop {
   right: max(1rem, calc((100vw - 72rem) / 2 + 1.5rem));
   margin: 0;
 }
+
+/* The player frame in fullscreen: the video fills the screen, letterboxed. */
+.player:fullscreen {
+  display: flex;
+  align-items: center;
+  background: black;
+}
+.player:fullscreen video {
+  height: 100%;
+  aspect-ratio: auto;
+}
