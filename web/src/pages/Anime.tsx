@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useParams } from 'react-router'
+import { Link, useParams, useSearchParams } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
 import { api, plainText, titleOf, type AnimeDetail, type Media, type Relation } from '../lib/api'
 import { formatLabel, formatScore, STATUS_LABEL, useMe } from '../lib/list'
@@ -11,17 +11,24 @@ import { Empty, ErrorBox, Loading } from '../components/States'
 
 export default function Anime() {
   const id = Number(useParams().id)
-  const q = useQuery({ queryKey: ['anime', id], queryFn: () => api.anime(id), enabled: id > 0 })
+  const [params, setParams] = useSearchParams()
+  // A source picked by hand; without one the server falls back by itself.
+  const source = params.get('source') ?? undefined
+  const q = useQuery({ queryKey: ['anime', id, source ?? ''], queryFn: () => api.anime(id, source), enabled: id > 0 })
 
   if (!(id > 0)) return <Empty>That is not a valid anime link.</Empty>
   if (q.isPending) return <Loading what="the anime and its episodes" />
   if (q.isError) return <ErrorBox title="Could not load this anime." error={q.error} onRetry={() => q.refetch()} />
-  return <Detail data={q.data} />
+  const pick = (id: string) => setParams(id === q.data.sources[0]?.id ? {} : { source: id }, { replace: true })
+  return <Detail data={q.data} picked={!!source} onPick={pick} />
 }
 
-function Detail({ data }: { data: AnimeDetail }) {
+function Detail({ data, picked, onPick }: { data: AnimeDetail; picked: boolean; onPick: (source: string) => void }) {
   const { media: m, mapping, episodes } = data
   const src = data.source.name
+  const preferred = data.sources[0]
+  // Episodes from a source other than the preferred one play from it too.
+  const watchQuery = preferred && data.source.id !== preferred.id ? `?source=${data.source.id}` : ''
   const [picker, setPicker] = useState(false)
   const [more, setMore] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -69,7 +76,7 @@ function Detail({ data }: { data: AnimeDetail }) {
             <div className="mt-4 flex flex-wrap items-center gap-3">
               {next !== undefined && (
                 <Link
-                  to={`/watch/${m.id}/${next}`}
+                  to={`/watch/${m.id}/${next}${watchQuery}`}
                   className="inline-flex min-h-11 items-baseline gap-2 rounded-md bg-accent px-5 py-2 text-bg hover:brightness-110"
                 >
                   <span className="text-sm font-medium">Play</span>
@@ -120,6 +127,33 @@ function Detail({ data }: { data: AnimeDetail }) {
           </p>
         </div>
 
+        {data.sources.length > 1 && (
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+            <span id="source-label" className="text-muted">
+              Source
+            </span>
+            <div role="radiogroup" aria-labelledby="source-label" className="inline-flex rounded-md border border-line p-0.5">
+              {data.sources.map((o) => (
+                <button
+                  key={o.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={o.id === data.source.id}
+                  onClick={() => onPick(o.id)}
+                  className={`min-h-10 rounded px-3 ${o.id === data.source.id ? 'bg-line text-ink' : 'text-muted hover:text-ink'}`}
+                >
+                  {o.name}
+                </button>
+              ))}
+            </div>
+            {!picked && preferred && data.source.id !== preferred.id && (
+              <span className="text-muted">
+                {preferred.name} does not have this show, so episodes come from {src}.
+              </span>
+            )}
+          </div>
+        )}
+
         {data.sourceError && <ErrorBox title={`${src} did not respond as expected.`} error={data.sourceError} />}
         {!mapping && !data.sourceError && (
           <Empty>
@@ -139,7 +173,7 @@ function Detail({ data }: { data: AnimeDetail }) {
               return (
                 <li key={e.number}>
                   <Link
-                    to={`/watch/${m.id}/${e.number}`}
+                    to={`/watch/${m.id}/${e.number}${watchQuery}`}
                     aria-label={`Episode ${e.number}${watched ? ', watched' : ''}`}
                     className={`flex min-h-11 items-center justify-center rounded-md border font-display text-lg font-semibold ${
                       isNext
@@ -177,6 +211,7 @@ function Detail({ data }: { data: AnimeDetail }) {
         animeId={m.id}
         defaultQuery={m.title.romaji}
         current={mapping}
+        sourceId={data.source.id}
         sourceName={src}
         open={picker}
         onClose={() => setPicker(false)}

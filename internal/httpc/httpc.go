@@ -47,6 +47,33 @@ func (c *Client) Get(ctx context.Context, url, referer string) ([]byte, error) {
 	return body, nil
 }
 
+// Probe checks that url serves a file: it asks for the first byte and
+// fails on an error status or a web page (hosts answer removed files with
+// one).
+func (c *Client) Probe(ctx context.Context, url, referer string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("User-Agent", UserAgent)
+	req.Header.Set("Range", "bytes=0-0")
+	if referer != "" {
+		req.Header.Set("Referer", referer)
+	}
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+		return fmt.Errorf("%s: %s", url, resp.Status)
+	}
+	if strings.HasPrefix(resp.Header.Get("Content-Type"), "text/html") {
+		return fmt.Errorf("%s: a web page, not a video", url)
+	}
+	return nil
+}
+
 // PostForm posts form values the way a page's own script does (an AJAX
 // request with the page as Referer) and returns the body.
 func (c *Client) PostForm(ctx context.Context, target, referer string, form url.Values) ([]byte, error) {

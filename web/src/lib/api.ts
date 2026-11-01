@@ -78,6 +78,8 @@ export type AnimeDetail = {
   episodes: Episode[]
   candidates?: Candidate[]
   sourceError?: string
+  // Every source this anime can come from, preferred first.
+  sources: Source[]
 }
 
 export type Stream = { url: string; type: string; headers: Record<string, string>; subLang: string; server: string }
@@ -111,7 +113,16 @@ export type SavedInfo = {
 // The viewer's own score for one episode (1-10), kept by SoraPlay: AniList only scores whole anime.
 export type Rating = { episode: number; score: number; note: string; updatedAt: number }
 
-export type StreamResult = { episode: number; title: string; streams: Stream[]; resume: Position | null }
+// source is where the streams came from ("saved" for the homelab copy);
+// sources lists the ones that can be asked for by name.
+export type StreamResult = {
+  episode: number
+  title: string
+  streams: Stream[]
+  resume: Position | null
+  source: Source
+  sources: Source[]
+}
 
 export class ApiError extends Error {
   status: number
@@ -151,12 +162,15 @@ export const api = {
     request<Rating>('PUT', `/api/anime/${id}/episodes/${ep}/rating`, { score, note }),
   deleteRating: (id: number, ep: number) => request<void>('DELETE', `/api/anime/${id}/episodes/${ep}/rating`, {}),
   search: (q: string) => request<Media[]>('GET', `/api/search?q=${encodeURIComponent(q)}`),
-  anime: (id: number) => request<AnimeDetail>('GET', `/api/anime/${id}`),
-  candidates: (id: number, q: string) =>
-    request<Candidate[]>('GET', `/api/anime/${id}/candidates?q=${encodeURIComponent(q)}`),
-  saveMapping: (id: number, providerId: string, epOffset: number) =>
-    request<Mapping>('PUT', `/api/anime/${id}/mapping`, { providerId, epOffset }),
-  stream: (id: number, ep: number) => request<StreamResult>('GET', `/api/anime/${id}/episodes/${ep}/stream`),
+  // source picks one source by ID; without it the server uses the preferred
+  // source and falls back to the next when it lacks the show or episode.
+  anime: (id: number, source?: string) => request<AnimeDetail>('GET', `/api/anime/${id}${sourceQuery(source)}`),
+  candidates: (id: number, q: string, source?: string) =>
+    request<Candidate[]>('GET', `/api/anime/${id}/candidates?q=${encodeURIComponent(q)}${sourceQuery(source, '&')}`),
+  saveMapping: (id: number, providerId: string, epOffset: number, source?: string) =>
+    request<Mapping>('PUT', `/api/anime/${id}/mapping${sourceQuery(source)}`, { providerId, epOffset }),
+  stream: (id: number, ep: number, source?: string) =>
+    request<StreamResult>('GET', `/api/anime/${id}/episodes/${ep}/stream${sourceQuery(source)}`),
   // keepalive lets the last save finish while the page is closing.
   savePosition: (id: number, ep: number, position: number, duration: number, keepalive = false) =>
     request<void>('PUT', `/api/anime/${id}/episodes/${ep}/position`, { position, duration }, keepalive),
@@ -167,6 +181,10 @@ export const api = {
 }
 
 export const ALL_STATUSES: ListStatus[] = ['CURRENT', 'REPEATING', 'PLANNING', 'COMPLETED', 'PAUSED', 'DROPPED']
+
+function sourceQuery(source: string | undefined, sep = '?'): string {
+  return source ? `${sep}source=${encodeURIComponent(source)}` : ''
+}
 
 function clean(p: Record<string, unknown>): Record<string, string> {
   const out: Record<string, string> = {}

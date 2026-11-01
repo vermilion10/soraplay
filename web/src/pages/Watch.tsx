@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Hls from 'hls.js'
 import type { FragmentLoaderConstructor, LoaderCallbacks, LoaderConfiguration, LoaderContext } from 'hls.js'
@@ -17,11 +17,15 @@ export default function Watch() {
   const params = useParams()
   const id = Number(params.id)
   const ep = Number(params.ep)
-  const anime = useQuery({ queryKey: ['anime', id], queryFn: () => api.anime(id), enabled: id > 0 })
+  const [search, setSearch] = useSearchParams()
+  // A source picked by hand; without one the server falls back by itself.
+  const source = search.get('source') ?? undefined
+  const watchQuery = source ? `?source=${encodeURIComponent(source)}` : ''
+  const anime = useQuery({ queryKey: ['anime', id, source ?? ''], queryFn: () => api.anime(id, source), enabled: id > 0 })
   // Stream links expire after a few hours, so never reuse an old one.
   const stream = useQuery({
-    queryKey: ['stream', id, ep],
-    queryFn: () => api.stream(id, ep),
+    queryKey: ['stream', id, ep, source ?? ''],
+    queryFn: () => api.stream(id, ep, source),
     enabled: id > 0 && ep > 0,
     staleTime: 0,
     gcTime: 0,
@@ -35,6 +39,9 @@ export default function Watch() {
   const idx = eps.findIndex((e) => e.number === ep)
   const prev = idx > 0 ? eps[idx - 1].number : undefined
   const next = idx >= 0 && idx < eps.length - 1 ? eps[idx + 1].number : undefined
+  // The other source to offer when this one plays badly.
+  const other = stream.data?.sources.find((x) => x.id !== stream.data?.source.id)
+  const tryOther = other ? () => setSearch({ source: other.id }) : undefined
 
   return (
     <article className="mt-2">
@@ -46,13 +53,23 @@ export default function Watch() {
         )}
         {stream.isError && (
           <div className="flex aspect-video items-center justify-center p-4">
-            <ErrorBox title={`Episode ${ep} could not be loaded.`} error={stream.error} onRetry={() => stream.refetch()} />
+            <div>
+              <ErrorBox title={`Episode ${ep} could not be loaded.`} error={stream.error} onRetry={() => stream.refetch()} />
+              {source && (
+                <button type="button" onClick={() => setSearch({})} className="min-h-11 text-sm underline">
+                  Try the usual source instead
+                </button>
+              )}
+            </div>
           </div>
         )}
         {stream.data && (
           <Player
             key={stream.data.streams[0].url}
             src={stream.data.streams[0].url}
+            type={stream.data.streams[0].type}
+            watchQuery={watchQuery}
+            otherSource={other && tryOther ? { name: other.name, pick: tryOther } : undefined}
             animeId={id}
             title={m ? titleOf(m) : ''}
             ep={ep}
@@ -77,20 +94,27 @@ export default function Watch() {
         </div>
         <nav aria-label="Episodes" className="flex gap-2">
           {prev !== undefined && (
-            <Link to={`/watch/${id}/${prev}`} className="inline-flex min-h-11 items-center rounded-md border border-line px-4 hover:border-muted">
+            <Link to={`/watch/${id}/${prev}${watchQuery}`} className="inline-flex min-h-11 items-center rounded-md border border-line px-4 hover:border-muted">
               Previous
             </Link>
           )}
           {next !== undefined && (
-            <Link to={`/watch/${id}/${next}`} className="inline-flex min-h-11 items-center rounded-md border border-line px-4 hover:border-muted">
+            <Link to={`/watch/${id}/${next}${watchQuery}`} className="inline-flex min-h-11 items-center rounded-md border border-line px-4 hover:border-muted">
               Next episode
             </Link>
           )}
         </nav>
       </div>
       {stream.data && (
-        <p className="mt-2 text-xs text-muted">
-          Indonesian subtitles (burned in) · server {stream.data.streams[0].server}
+        <p className="mt-2 flex flex-wrap items-center gap-x-2 text-xs text-muted">
+          <span>
+            Indonesian subtitles (burned in) · {stream.data.source.name}, server {stream.data.streams[0].server}
+          </span>
+          {other && tryOther && (
+            <button type="button" onClick={tryOther} className="min-h-11 underline hover:text-ink">
+              Play from {other.name} instead
+            </button>
+          )}
         </p>
       )}
       <EpisodeRating animeId={id} ep={ep} />
@@ -104,6 +128,9 @@ export default function Watch() {
 
 function Player({
   src,
+  type,
+  watchQuery,
+  otherSource,
   animeId,
   title,
   ep,
@@ -113,6 +140,9 @@ function Player({
   onExpired,
 }: {
   src: string
+  type: string // "hls" or "mp4"
+  watchQuery: string // keeps the picked source on episode links
+  otherSource?: { name: string; pick: () => void }
   animeId: number
   title: string
   ep: number
@@ -152,7 +182,7 @@ function Player({
   useEffect(() => {
     const v = video.current
     if (!v) return
-    if (Hls.isSupported()) {
+    if (type === 'hls' && Hls.isSupported()) {
       // A segment that is not video (sources sometimes serve an error page in
       // its place) means parts of the episode are broken at the source. The
       // playlist is then rebuilt without them and playback carries on from
@@ -216,8 +246,8 @@ function Player({
       hls.attachMedia(v)
       return () => hls.destroy()
     }
-    v.src = src // Safari and iOS play HLS natively
-  }, [src, repair])
+    v.src = src // MP4 files, and HLS on Safari and iOS, play natively
+  }, [src, type, repair])
 
   useEffect(() => () => {
     if (repair) URL.revokeObjectURL(repair.url)
@@ -311,6 +341,19 @@ function Player({
       })
   }
 
+  // Direct MP4 links expire after about an hour; a failure after playback
+  // started fetches a fresh link, which resumes at the saved position.
+  function onVideoError() {
+    const v = video.current
+    if (!v || type !== 'mp4') return
+    if (v.currentTime > 0) {
+      savePosition(true)
+      expired.current()
+    } else {
+      setError('This server would not play the video.')
+    }
+  }
+
   // Captures the frame on screen; it is kept in this browser until saved.
   async function capture() {
     const v = video.current
@@ -362,7 +405,7 @@ function Player({
     const v = video.current
     if (!v || !inPart || !skip) return
     if (inPart === 'ed' && nextEp !== undefined) {
-      navigate(`/watch/${animeId}/${nextEp}`)
+      navigate(`/watch/${animeId}/${nextEp}${watchQuery}`)
       return
     }
     const iv = inPart === 'op' ? skip.op : skip.ed
@@ -406,7 +449,7 @@ function Player({
           skipRef.current()
           break
         case 'n':
-          if (nextEp !== undefined) navigate(`/watch/${animeId}/${nextEp}`)
+          if (nextEp !== undefined) navigate(`/watch/${animeId}/${nextEp}${watchQuery}`)
           break
       }
     }
@@ -418,7 +461,14 @@ function Player({
     <div>
       {error ? (
         <div className="flex aspect-video items-center justify-center p-4">
-          <ErrorBox title="The video stopped." error={error} onRetry={onExpired} />
+          <div>
+            <ErrorBox title="The video stopped." error={error} onRetry={onExpired} />
+            {otherSource && (
+              <button type="button" onClick={otherSource.pick} className="min-h-11 text-sm underline">
+                Play from {otherSource.name} instead
+              </button>
+            )}
+          </div>
         </div>
       ) : (
         <div
@@ -432,7 +482,10 @@ function Player({
             controls
             playsInline
             // Lets a natively played cross-origin stream be read for captures.
-            crossOrigin="anonymous"
+            // Direct MP4 hosts send no CORS headers, and asking for it would
+            // stop them playing at all, so captures are not offered there.
+            crossOrigin={type === 'hls' ? 'anonymous' : undefined}
+            onError={onVideoError}
             // The player's own fullscreen button below replaces this one.
             controlsList="nofullscreen"
             onLoadedMetadata={onLoaded}
@@ -513,6 +566,14 @@ function Player({
         <p className="px-4 py-1 text-sm text-muted sm:px-3">
           Parts of this episode are broken at the source and are left out:{' '}
           {removed.map((g) => `${clock(g.start)}–${clock(g.end)}`).join(', ')}.
+          {otherSource && (
+            <>
+              {' '}
+              <button type="button" onClick={otherSource.pick} className="min-h-11 text-ink underline">
+                Play the whole episode from {otherSource.name}
+              </button>
+            </>
+          )}
         </p>
       )}
       <p role="status" aria-live="polite" className="sr-only sm:not-sr-only sm:px-3 sm:py-1 sm:text-xs sm:text-muted">

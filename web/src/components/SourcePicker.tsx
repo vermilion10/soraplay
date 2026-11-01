@@ -10,6 +10,7 @@ export function SourcePicker({
   animeId,
   defaultQuery,
   current,
+  sourceId,
   sourceName,
   open,
   onClose,
@@ -17,6 +18,7 @@ export function SourcePicker({
   animeId: number
   defaultQuery: string
   current: Mapping | null
+  sourceId: string
   sourceName: string
   open: boolean
   onClose: () => void
@@ -35,12 +37,12 @@ export function SourcePicker({
   }, [open])
 
   const results = useQuery({
-    queryKey: ['candidates', animeId, q],
-    queryFn: () => api.candidates(animeId, q),
+    queryKey: ['candidates', animeId, sourceId, q],
+    queryFn: () => api.candidates(animeId, q, sourceId),
     enabled: open && q !== '',
   })
   const save = useMutation({
-    mutationFn: (c: Candidate) => api.saveMapping(animeId, c.id, Number(offset) || 0),
+    mutationFn: (c: Candidate) => api.saveMapping(animeId, c.id, Number(offset) || 0, sourceId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['anime', animeId] })
       onClose()

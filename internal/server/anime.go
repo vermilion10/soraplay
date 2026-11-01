@@ -310,7 +310,7 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 		title, streams = fmt.Sprintf("Episode %g", ep), []provider.Stream{*local}
 	} else {
 		// A named source is used alone; otherwise each source is tried in
-		// turn, and the preferred source's error is the one reported.
+		// turn, and the most telling error is reported.
 		try := []provider.Provider{p}
 		if !named {
 			try = s.sources(m)
@@ -323,7 +323,8 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 				title, streams, used = t, sts, sourceJSON{src.Name(), src.Label()}
 				break
 			}
-			if firstErr == nil {
+			// "Not on this source" says less than a later source's real failure.
+			if firstErr == nil || firstStatus == http.StatusNotFound {
 				firstErr, firstStatus = err, status
 			}
 			log.Printf("stream: anime %d ep %g on %s: %v", m.ID, ep, src.Name(), err)
