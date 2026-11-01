@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 )
 
@@ -41,6 +43,34 @@ func (c *Client) Get(ctx context.Context, url, referer string) ([]byte, error) {
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return nil, fmt.Errorf("GET %s: %s", url, resp.Status)
+	}
+	return body, nil
+}
+
+// PostForm posts form values the way a page's own script does (an AJAX
+// request with the page as Referer) and returns the body.
+func (c *Client) PostForm(ctx context.Context, target, referer string, form url.Values) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", UserAgent)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	if referer != "" {
+		req.Header.Set("Referer", referer)
+	}
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return nil, fmt.Errorf("POST %s: %s", target, resp.Status)
 	}
 	return body, nil
 }
