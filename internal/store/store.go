@@ -48,6 +48,14 @@ CREATE TABLE IF NOT EXISTS positions (
 	updated_at INTEGER NOT NULL,
 	PRIMARY KEY (anilist_id, episode)
 );
+CREATE TABLE IF NOT EXISTS ratings (
+	anilist_id INTEGER NOT NULL,
+	episode    REAL    NOT NULL,
+	score      INTEGER NOT NULL,
+	note       TEXT    NOT NULL DEFAULT '',
+	updated_at INTEGER NOT NULL,
+	PRIMARY KEY (anilist_id, episode)
+);
 CREATE TABLE IF NOT EXISTS progress_queue (
 	anilist_id INTEGER PRIMARY KEY,
 	progress   INTEGER NOT NULL,

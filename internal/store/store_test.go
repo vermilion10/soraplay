@@ -142,3 +142,20 @@ func TestDownloads(t *testing.T) {
 		t.Fatalf("after remove = %+v", ds)
 	}
 }
+
+func TestRatings(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+	s.SaveRating(ctx, 1, Rating{Episode: 3, Score: 6})
+	s.SaveRating(ctx, 1, Rating{Episode: 1, Score: 8, Note: "great opening"})
+	s.SaveRating(ctx, 1, Rating{Episode: 3, Score: 9})
+	s.SaveRating(ctx, 2, Rating{Episode: 1, Score: 2})
+	rs, err := s.Ratings(ctx, 1)
+	if err != nil || len(rs) != 2 || rs[0].Episode != 1 || rs[0].Note != "great opening" || rs[1].Score != 9 {
+		t.Fatalf("ratings = %+v, %v", rs, err)
+	}
+	s.DeleteRating(ctx, 1, 1)
+	if rs, _ := s.Ratings(ctx, 1); len(rs) != 1 || rs[0].Episode != 3 {
+		t.Fatalf("after delete = %+v", rs)
+	}
+}
