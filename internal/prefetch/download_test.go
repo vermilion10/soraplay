@@ -2,6 +2,7 @@ package prefetch
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -77,6 +78,31 @@ func TestDownloadFailureLeavesNothing(t *testing.T) {
 	for _, p := range []string{dir, dir + ".part"} {
 		if _, err := os.Stat(p); !os.IsNotExist(err) {
 			t.Errorf("%s exists after a failed download", strings.TrimPrefix(p, filepath.Dir(dir)))
+		}
+	}
+}
+
+func TestDownloadRejectsErrorPages(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/index.m3u8", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("#EXTM3U\n#EXTINF:10,\nok.ts\n#EXTINF:10,\nbroken.ts\n"))
+	})
+	mux.HandleFunc("/ok.ts", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte{0x47, 1, 2}) })
+	// Served with 200, as the CDN in front of a failing origin does.
+	mux.HandleFunc("/broken.ts", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("<html><center><h1>403 Forbidden</h1></center></html>"))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	dir := filepath.Join(t.TempDir(), "ep3")
+	f := &Fetcher{HTTP: srv.Client(), UserAgent: "test"}
+	if _, err := f.Download(context.Background(), srv.URL+"/index.m3u8", dir); !errors.Is(err, ErrNotVideo) {
+		t.Fatalf("err = %v, want ErrNotVideo", err)
+	}
+	for _, p := range []string{dir, dir + ".part"} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Errorf("%s exists after a rejected download", filepath.Base(p))
 		}
 	}
 }

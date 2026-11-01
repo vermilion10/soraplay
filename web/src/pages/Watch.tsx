@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Hls from 'hls.js'
+import type { FragmentLoaderConstructor, LoaderCallbacks, LoaderConfiguration, LoaderContext } from 'hls.js'
 import { api, clock, resumable, titleOf, type Interval, type Position, type SkipTimes } from '../lib/api'
 import { addCapture, grabFrame, useCaptures } from '../lib/captures'
+import { repairPlaylist, toOriginal, toShortened, type Repair } from '../lib/hlsRepair'
 import { Empty, ErrorBox, Loading } from '../components/States'
 import { EpisodeRating } from '../components/EpisodeRating'
 
@@ -129,6 +131,13 @@ function Player({
   const [skip, setSkip] = useState<SkipTimes | null>(null)
   const [inPart, setInPart] = useState<'op' | 'ed' | null>(null)
   const [shot, setShot] = useState<{ ok: boolean; text: string } | null>(null)
+  // Set when broken parts were cut from the playlist; at is where playback was.
+  const [repair, setRepair] = useState<(Repair & { at: number }) | null>(null)
+  const [checking, setChecking] = useState(false)
+  const removed = repair?.removed ?? []
+  const cutTotal = removed.reduce((n, r) => n + r.end - r.start, 0)
+  // Positions, skip times and captures use the episode's own timeline.
+  const episodeTime = (t: number) => toOriginal(t, removed)
   const [paused, setPaused] = useState(true)
   const [awake, setAwake] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
@@ -144,35 +153,89 @@ function Player({
     const v = video.current
     if (!v) return
     if (Hls.isSupported()) {
-      const hls = new Hls()
+      // A segment that is not video (sources sometimes serve an error page in
+      // its place) means parts of the episode are broken at the source. The
+      // playlist is then rebuilt without them and playback carries on from
+      // the same moment; see lib/hlsRepair.
+      let broken = false
+      const onBroken = () => {
+        if (broken) return
+        broken = true
+        hls.stopLoad()
+        if (repair) {
+          setError('Parts of this episode are broken at the source, and it would not play even without them.')
+          return
+        }
+        const at = v.currentTime
+        setChecking(true)
+        repairPlaylist(src)
+          .then((r) => {
+            if (r.removed.length === 0) {
+              URL.revokeObjectURL(r.url)
+              setError('The source sent a broken part of this episode.')
+            } else {
+              setRepair({ ...r, at })
+            }
+          })
+          .catch((e: Error) => setError(`The source sent a broken part, and checking it failed: ${e.message}`))
+          .finally(() => setChecking(false))
+      }
+
+      const Base = Hls.DefaultConfig.loader
+      class CheckedLoader extends Base {
+        load(context: LoaderContext, config: LoaderConfiguration, callbacks: LoaderCallbacks<LoaderContext>) {
+          super.load(context, config, {
+            ...callbacks,
+            onSuccess: (res, stats, ctx, details) => {
+              const data = res.data
+              // Video segments are binary; '<' starts an HTML error page.
+              if (data instanceof ArrayBuffer && data.byteLength > 0 && new Uint8Array(data, 0, 1)[0] === 0x3c) {
+                onBroken()
+                return
+              }
+              callbacks.onSuccess(res, stats, ctx, details)
+            },
+          })
+        }
+      }
+
+      // The base loader class is typed for any request; this one only sees fragments.
+      const hls = new Hls({ fLoader: CheckedLoader as unknown as FragmentLoaderConstructor })
       hls.on(Hls.Events.ERROR, (_, d) => {
-        if (!d.fatal) return
-        if (d.type === Hls.ErrorTypes.NETWORK_ERROR && d.response?.code === 403) {
+        if (!d.fatal || broken) return
+        if (d.details === Hls.ErrorDetails.FRAG_PARSING_ERROR) {
+          onBroken()
+        } else if (d.type === Hls.ErrorTypes.NETWORK_ERROR && d.response?.code === 403) {
           expired.current() // signed link ran out; fetch a fresh one
         } else {
           setError(`Playback failed (${d.details}).`)
           hls.destroy()
         }
       })
-      hls.loadSource(src)
+      hls.loadSource(repair?.url ?? src)
       hls.attachMedia(v)
       return () => hls.destroy()
     }
     v.src = src // Safari and iOS play HLS natively
-  }, [src])
+  }, [src, repair])
+
+  useEffect(() => () => {
+    if (repair) URL.revokeObjectURL(repair.url)
+  }, [repair])
 
   useEffect(() => {
     const v = video.current
     if (!v) return
     v.play().catch(() => {}) // autoplay can be refused; the controls are there
-  }, [src])
+  }, [src, repair])
 
   // Saves where playback is, so this episode resumes there on any device.
   function savePosition(keepalive = false) {
     const v = video.current
     if (!v || !v.duration || v.currentTime < 1) return
-    lastSaved.current = v.currentTime
-    api.savePosition(animeId, ep, v.currentTime, v.duration, keepalive).catch(() => {})
+    const t = episodeTime(v.currentTime)
+    lastSaved.current = t
+    api.savePosition(animeId, ep, t, v.duration + cutTotal, keepalive).catch(() => {})
   }
   const saveRef = useRef(savePosition)
   saveRef.current = savePosition
@@ -207,7 +270,12 @@ function Player({
   function onLoaded() {
     const v = video.current
     if (!v) return
-    api.skipTimes(animeId, ep, v.duration).then(setSkip).catch(() => {})
+    api.skipTimes(animeId, ep, v.duration + cutTotal).then(setSkip).catch(() => {})
+    if (repair) {
+      // The rebuilt playlist carries on where the broken one stopped.
+      v.currentTime = toShortened(repair.at, removed)
+      return
+    }
     if (!resumable(resume)) return
     v.currentTime = resume.position
     lastSaved.current = resume.position
@@ -217,8 +285,9 @@ function Player({
   function onTime() {
     const v = video.current
     if (!v) return
-    if (Math.abs(v.currentTime - lastSaved.current) >= 10) savePosition()
-    const within = (iv: Interval | null) => !!iv && v.currentTime >= iv.start && v.currentTime < iv.end - 2
+    const now = episodeTime(v.currentTime)
+    if (Math.abs(now - lastSaved.current) >= 10) savePosition()
+    const within = (iv: Interval | null) => !!iv && now >= iv.start && now < iv.end - 2
     setInPart(within(skip?.op ?? null) ? 'op' : within(skip?.ed ?? null) ? 'ed' : null)
     if (sent.current || !v.duration || v.currentTime / v.duration < WATCHED_AT) return
     sent.current = true
@@ -246,7 +315,7 @@ function Player({
   async function capture() {
     const v = video.current
     if (!v) return
-    const time = v.currentTime
+    const time = episodeTime(v.currentTime)
     try {
       const blob = await grabFrame(v)
       await addCapture({
@@ -297,7 +366,7 @@ function Player({
       return
     }
     const iv = inPart === 'op' ? skip.op : skip.ed
-    if (iv) v.currentTime = iv.end
+    if (iv) v.currentTime = toShortened(iv.end, removed)
     setInPart(null)
   }
   const skipRef = useRef(skipPart)
@@ -436,6 +505,15 @@ function Player({
             Start over
           </button>
         </div>
+      )}
+      {checking && (
+        <p className="px-4 py-1 text-sm text-muted sm:px-3">The source sent a broken part; checking the rest of this episode…</p>
+      )}
+      {removed.length > 0 && (
+        <p className="px-4 py-1 text-sm text-muted sm:px-3">
+          Parts of this episode are broken at the source and are left out:{' '}
+          {removed.map((g) => `${clock(g.start)}–${clock(g.end)}`).join(', ')}.
+        </p>
       )}
       <p role="status" aria-live="polite" className="sr-only sm:not-sr-only sm:px-3 sm:py-1 sm:text-xs sm:text-muted">
         {status}

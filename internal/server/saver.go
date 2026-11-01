@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -28,6 +29,9 @@ const (
 	recentFor = 14 * 24 * time.Hour
 	// episodeEstimate is the space reserved for an episode not saved yet.
 	episodeEstimate = 400 << 20
+	// brokenFor is how long an episode with broken parts at the source is
+	// left alone before trying again; it is streamed meanwhile.
+	brokenFor = 24 * time.Hour
 )
 
 var mediaFileRe = regexp.MustCompile(`^[a-z0-9]+\.(m3u8|ts|m4s|mp4|aac|key|vtt)$`)
@@ -143,7 +147,7 @@ func (s *Server) saveOnce(ctx context.Context) error {
 	}
 	limit := int64(s.Cfg.PrefetchMaxGB) << 30
 	for k := range want {
-		if have[k] {
+		if have[k] || s.recentlyBroken(k) {
 			continue
 		}
 		if used+episodeEstimate > limit {
@@ -153,6 +157,9 @@ func (s *Server) saveOnce(ctx context.Context) error {
 		m := byID[k.id]
 		n, err := s.saveEpisode(ctx, &m, k.ep)
 		if err != nil {
+			if errors.Is(err, prefetch.ErrNotVideo) {
+				s.markBroken(k)
+			}
 			log.Printf("saver: anime %d ep %g: %v", k.id, k.ep, err)
 			continue
 		}
@@ -222,6 +229,22 @@ func (s *Server) saveEpisode(ctx context.Context, m *anilist.Media, ep float64) 
 		return 0, err
 	}
 	return n, s.Store.AddDownload(ctx, m.ID, ep, n)
+}
+
+func (s *Server) recentlyBroken(k wantKey) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	at, ok := s.brokenEps[k]
+	return ok && time.Since(at) < brokenFor
+}
+
+func (s *Server) markBroken(k wantKey) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.brokenEps == nil {
+		s.brokenEps = map[wantKey]time.Time{}
+	}
+	s.brokenEps[k] = time.Now()
 }
 
 func (s *Server) deleteSaved(ctx context.Context, id int, ep float64) {

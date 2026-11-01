@@ -5,6 +5,7 @@ package prefetch
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,6 +17,10 @@ import (
 	"strings"
 	"time"
 )
+
+// ErrNotVideo means the source served a page (usually an error page) in
+// place of a video segment, so that part of the episode is broken there.
+var ErrNotVideo = errors.New("prefetch: the source sent a web page instead of a video segment")
 
 var (
 	uriAttrRe   = regexp.MustCompile(`URI="([^"]+)"`)
@@ -195,8 +200,8 @@ func (f *Fetcher) saveFile(ctx context.Context, u, path string) (int64, error) {
 			}
 		}
 		n, err := f.saveOnce(ctx, u, path)
-		if err == nil {
-			return n, nil
+		if err == nil || errors.Is(err, ErrNotVideo) {
+			return n, err // a broken segment stays broken; no retry
 		}
 		lastErr = err
 	}
@@ -209,11 +214,15 @@ func (f *Fetcher) saveOnce(ctx context.Context, u, path string) (int64, error) {
 		return 0, err
 	}
 	defer resp.Body.Close()
+	body := bufio.NewReader(resp.Body)
+	if b, err := body.Peek(1); err == nil && b[0] == '<' {
+		return 0, ErrNotVideo
+	}
 	file, err := os.Create(path)
 	if err != nil {
 		return 0, err
 	}
-	n, err := io.Copy(file, resp.Body)
+	n, err := io.Copy(file, body)
 	if cerr := file.Close(); err == nil {
 		err = cerr
 	}

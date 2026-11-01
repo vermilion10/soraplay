@@ -38,6 +38,7 @@ type Server struct {
 	mu        sync.Mutex
 	animeMemo map[string]memo // provider anime pages, keyed by provider ID
 	missMemo  map[int]time.Time
+	brokenEps map[wantKey]time.Time // episodes the saver found broken at the source
 }
 
 type memo struct {
