@@ -5,6 +5,7 @@ import { api, plainText, titleOf, type AnimeDetail, type Media, type Relation } 
 import { formatLabel, formatScore, STATUS_LABEL, useMe } from '../lib/list'
 import { SourcePicker } from '../components/SourcePicker'
 import { EntryEditor } from '../components/EntryEditor'
+import { RatingsChart } from '../components/RatingsChart'
 import { PosterGrid } from '../components/PosterGrid'
 import { Empty, ErrorBox, Loading } from '../components/States'
 
@@ -167,6 +168,8 @@ function Detail({ data }: { data: AnimeDetail }) {
           </p>
         )}
       </section>
+
+      <RatingsChart animeId={m.id} episodes={m.episodes} />
 
       <More id={m.id} />
 

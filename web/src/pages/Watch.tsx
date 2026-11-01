@@ -5,6 +5,7 @@ import Hls from 'hls.js'
 import { api, clock, resumable, titleOf, type Interval, type Position, type SkipTimes } from '../lib/api'
 import { addCapture, grabFrame, useCaptures } from '../lib/captures'
 import { Empty, ErrorBox, Loading } from '../components/States'
+import { EpisodeRating } from '../components/EpisodeRating'
 
 // Share of an episode that counts as watched. Past this point the end credits
 // are usually running.
@@ -90,6 +91,7 @@ export default function Watch() {
           Indonesian subtitles (burned in) · server {stream.data.streams[0].server}
         </p>
       )}
+      <EpisodeRating animeId={id} ep={ep} />
       <p className="mt-4 text-xs text-muted">
         Keys: Space play/pause · ← → seek · F fullscreen · C capture the scene · S skip intro or ending
         {next !== undefined && ' · N next episode'}

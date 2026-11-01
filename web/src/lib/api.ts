@@ -108,6 +108,9 @@ export type SavedInfo = {
   items: SavedEpisode[]
 }
 
+// The viewer's own score for one episode (1-10), kept by SoraPlay: AniList only scores whole anime.
+export type Rating = { episode: number; score: number; note: string; updatedAt: number }
+
 export type StreamResult = { episode: number; title: string; streams: Stream[]; resume: Position | null }
 
 export class ApiError extends Error {
@@ -143,6 +146,10 @@ export const api = {
   saveEntry: (id: number, u: EntryUpdate) => request<ListEntry>('PUT', `/api/anime/${id}/entry`, u),
   deleteEntry: (id: number) => request<void>('DELETE', `/api/anime/${id}/entry`, {}),
   saved: () => request<SavedInfo>('GET', '/api/saved'),
+  ratings: (id: number) => request<Rating[]>('GET', `/api/anime/${id}/ratings`),
+  saveRating: (id: number, ep: number, score: number, note: string) =>
+    request<Rating>('PUT', `/api/anime/${id}/episodes/${ep}/rating`, { score, note }),
+  deleteRating: (id: number, ep: number) => request<void>('DELETE', `/api/anime/${id}/episodes/${ep}/rating`, {}),
   search: (q: string) => request<Media[]>('GET', `/api/search?q=${encodeURIComponent(q)}`),
   anime: (id: number) => request<AnimeDetail>('GET', `/api/anime/${id}`),
   candidates: (id: number, q: string) =>

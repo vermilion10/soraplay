@@ -8,6 +8,7 @@ A self-hosted web app for watching anime with Indonesian subtitles, synced with 
 - Finishing an episode (85% watched) updates your progress on AniList. Updates are queued, so a dropped connection or an AniList rate limit never loses one.
 - The next two unwatched episodes of shows you watched in the last two weeks are saved on the server ahead of time, so they start instantly and play even when the source is down. Saved episodes are deleted once watched, and the Saved episodes page (in the account menu) shows what is on disk. Adult titles are never saved.
 - Shows on your Watching list are checked for new episodes every 30 minutes; new ones appear on the home page and, with a Discord webhook set, as a message.
+- Rate each episode from 1 to 10 with an optional note, under the player. AniList scores only whole anime, so these ratings are kept by SoraPlay; each anime page charts them, episode by episode.
 - Capture scenes while watching (the Capture button, or C). Captures wait in the browser until you save or share them, as the bare scene or with the anime title, episode, time in the episode and date drawn on as a caption bar or a corner tag. They never go to the server.
 - Playback position is saved on the server, so an episode started on one device resumes on another. Intros and endings can be skipped using AniSkip timestamps.
 - Each AniList entry is matched to the right show on the source automatically. When a match is wrong or missing, pick the show by hand and set an episode offset for sources that number split seasons continuously.
