@@ -350,6 +350,48 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// episodeSources tells, per source, whether it has episode ep: "ready" when
+// it does, "missing" when it has the show but not that episode, and
+// "unlinked" when no show on it was matched (one may be picked by hand).
+// The player asks before offering another source.
+func (s *Server) episodeSources(w http.ResponseWriter, r *http.Request) {
+	ep, err := strconv.ParseFloat(r.PathValue("ep"), 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "bad episode number")
+		return
+	}
+	m, _, ok := s.animeAndProvider(w, r)
+	if !ok {
+		return
+	}
+	type entry struct {
+		sourceJSON
+		Status string `json:"status"`
+	}
+	out := []entry{}
+	for _, p := range s.sources(m) {
+		out = append(out, entry{sourceJSON{p.Name(), p.Label()}, s.episodeStatus(r.Context(), m, p, ep)})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) episodeStatus(ctx context.Context, m *anilist.Media, p provider.Provider, ep float64) string {
+	mp, _, err := s.mapping(ctx, p, m)
+	if err != nil || mp == nil {
+		return "unlinked"
+	}
+	pa, err := s.providerAnime(ctx, p, mp.ProviderID)
+	if err != nil {
+		return "missing"
+	}
+	for _, e := range pa.Episodes {
+		if e.Number == ep+mp.EpOffset {
+			return "ready"
+		}
+	}
+	return "missing"
+}
+
 // sourceStreams resolves episode ep (AniList numbering) of m on its source.
 // On failure it also returns the HTTP status that fits the error.
 func (s *Server) sourceStreams(ctx context.Context, m *anilist.Media, p provider.Provider, ep float64) (string, []provider.Stream, int, error) {

@@ -69,6 +69,10 @@ export type Candidate = { id: string; title: string; episodes: number; poster: s
 
 export type Source = { id: string; name: string }
 
+// Whether a source has a given episode; "unlinked" means no show on it was
+// matched yet.
+export type EpisodeSource = Source & { status: 'ready' | 'missing' | 'unlinked' }
+
 export type Episode = { number: number; title: string }
 
 export type AnimeDetail = {
@@ -171,6 +175,7 @@ export const api = {
     request<Mapping>('PUT', `/api/anime/${id}/mapping${sourceQuery(source)}`, { providerId, epOffset }),
   stream: (id: number, ep: number, source?: string) =>
     request<StreamResult>('GET', `/api/anime/${id}/episodes/${ep}/stream${sourceQuery(source)}`),
+  episodeSources: (id: number, ep: number) => request<EpisodeSource[]>('GET', `/api/anime/${id}/episodes/${ep}/sources`),
   // keepalive lets the last save finish while the page is closing.
   savePosition: (id: number, ep: number, position: number, duration: number, keepalive = false) =>
     request<void>('PUT', `/api/anime/${id}/episodes/${ep}/position`, { position, duration }, keepalive),

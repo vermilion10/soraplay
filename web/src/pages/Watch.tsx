@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Hls from 'hls.js'
 import type { FragmentLoaderConstructor, LoaderCallbacks, LoaderConfiguration, LoaderContext } from 'hls.js'
-import { api, clock, resumable, titleOf, type Interval, type Position, type SkipTimes } from '../lib/api'
+import { api, clock, resumable, titleOf, type EpisodeSource, type Interval, type Position, type SkipTimes } from '../lib/api'
 import { addCapture, grabFrame, useCaptures } from '../lib/captures'
 import { repairPlaylist, toOriginal, toShortened, type Repair } from '../lib/hlsRepair'
 import { Empty, ErrorBox, Loading } from '../components/States'
@@ -31,6 +31,13 @@ export default function Watch() {
     gcTime: 0,
   })
   const me = useQuery({ queryKey: ['me'], queryFn: api.me })
+  // Which sources have this episode, so another is only offered if it does.
+  const epSources = useQuery({
+    queryKey: ['episode-sources', id, ep],
+    queryFn: () => api.episodeSources(id, ep),
+    enabled: !!stream.data && stream.data.sources.length > 1,
+    staleTime: 5 * 60_000,
+  })
 
   if (!(id > 0 && ep > 0)) return <Empty>That is not a valid episode link.</Empty>
 
@@ -40,8 +47,14 @@ export default function Watch() {
   const prev = idx > 0 ? eps[idx - 1].number : undefined
   const next = idx >= 0 && idx < eps.length - 1 ? eps[idx + 1].number : undefined
   // The other source to offer when this one plays badly.
-  const other = stream.data?.sources.find((x) => x.id !== stream.data?.source.id)
-  const tryOther = other ? () => setSearch({ source: other.id }) : undefined
+  const others = epSources.data?.filter((x) => x.id !== stream.data?.source.id) ?? []
+  const other = others.find((x) => x.status === 'ready') ?? others[0]
+  const otherSource: OtherSource | undefined = other && {
+    name: other.name,
+    status: other.status,
+    pick: () => setSearch({ source: other.id }),
+    linkUrl: `/anime/${id}?source=${encodeURIComponent(other.id)}`,
+  }
 
   return (
     <article className="mt-2">
@@ -69,7 +82,7 @@ export default function Watch() {
             src={stream.data.streams[0].url}
             type={stream.data.streams[0].type}
             watchQuery={watchQuery}
-            otherSource={other && tryOther ? { name: other.name, pick: tryOther } : undefined}
+            otherSource={otherSource}
             animeId={id}
             title={m ? titleOf(m) : ''}
             ep={ep}
@@ -110,9 +123,9 @@ export default function Watch() {
           <span>
             Indonesian subtitles (burned in) · {stream.data.source.name}, server {stream.data.streams[0].server}
           </span>
-          {other && tryOther && (
-            <button type="button" onClick={tryOther} className="min-h-11 underline hover:text-ink">
-              Play from {other.name} instead
+          {otherSource?.status === 'ready' && (
+            <button type="button" onClick={otherSource.pick} className="min-h-11 underline hover:text-ink">
+              Play from {otherSource.name} instead
             </button>
           )}
         </p>
@@ -142,7 +155,7 @@ function Player({
   src: string
   type: string // "hls" or "mp4"
   watchQuery: string // keeps the picked source on episode links
-  otherSource?: { name: string; pick: () => void }
+  otherSource?: OtherSource
   animeId: number
   title: string
   ep: number
@@ -464,9 +477,9 @@ function Player({
           <div>
             <ErrorBox title="The video stopped." error={error} onRetry={onExpired} />
             {otherSource && (
-              <button type="button" onClick={otherSource.pick} className="min-h-11 text-sm underline">
-                Play from {otherSource.name} instead
-              </button>
+              <p className="text-sm">
+                <OtherSourceOffer other={otherSource} offer={`Play from ${otherSource.name} instead`} />
+              </p>
             )}
           </div>
         </div>
@@ -569,9 +582,7 @@ function Player({
           {otherSource && (
             <>
               {' '}
-              <button type="button" onClick={otherSource.pick} className="min-h-11 text-ink underline">
-                Play the whole episode from {otherSource.name}
-              </button>
+              <OtherSourceOffer other={otherSource} offer={`Play the whole episode from ${otherSource.name}`} />
             </>
           )}
         </p>
@@ -580,5 +591,32 @@ function Player({
         {status}
       </p>
     </div>
+  )
+}
+
+type OtherSource = {
+  name: string
+  status: EpisodeSource['status']
+  pick: () => void
+  linkUrl: string // the anime page on that source, to pick a show by hand
+}
+
+// Offers the other source when it has the episode, and otherwise says why not.
+function OtherSourceOffer({ other, offer }: { other: OtherSource; offer: string }) {
+  if (other.status === 'ready') {
+    return (
+      <button type="button" onClick={other.pick} className="min-h-11 text-ink underline">
+        {offer}
+      </button>
+    )
+  }
+  if (other.status === 'missing') return <>{other.name} does not have this episode either.</>
+  return (
+    <>
+      {other.name} has no match for this show.{' '}
+      <Link to={other.linkUrl} className="text-ink underline">
+        Pick one by hand
+      </Link>
+    </>
   )
 }

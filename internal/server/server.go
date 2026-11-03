@@ -76,6 +76,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/anime/{id}/mapping", s.saveMapping)
 	mux.HandleFunc("DELETE /api/anime/{id}/mapping", s.deleteMapping)
 	mux.HandleFunc("GET /api/anime/{id}/episodes/{ep}/stream", s.stream)
+	mux.HandleFunc("GET /api/anime/{id}/episodes/{ep}/sources", s.episodeSources)
 	mux.HandleFunc("POST /api/anime/{id}/progress", s.progress)
 	mux.HandleFunc("PUT /api/anime/{id}/episodes/{ep}/position", s.savePosition)
 	mux.HandleFunc("GET /api/anime/{id}/episodes/{ep}/skip", s.skipTimes)
