@@ -12,7 +12,7 @@ A self-hosted web app for watching anime with Indonesian subtitles, synced with 
 - Capture scenes while watching (the Capture button, or C). Captures wait in the browser until you save or share them, as the bare scene or with the anime title, episode, time in the episode and date drawn on as a caption bar or a corner tag. They never go to the server.
 - Playback position is saved on the server, so an episode started on one device resumes on another. Intros and endings can be skipped using AniSkip timestamps.
 - Each AniList entry is matched to the right show on the source automatically. When a match is wrong or missing, pick the show by hand and set an episode offset for sources that number split seasons continuously.
-- No ads and no tracking. Source A video plays straight from the source's CDN. Source E's video host only serves the client that requested the stream, so those streams are relayed through the server (signed URLs, about 0.5 Mbps per viewer). video host and VideoHost streams from the other sources are relayed the same way, at about 2.5 Mbps for 720p video host video.
+- No ads and no tracking. Source A video plays straight from the source's CDN. Source E's video host only serves the client that requested the stream, so those streams are relayed through the server (signed URLs, about 0.5 Mbps per viewer). video host and VideoHost streams from the other sources are relayed the same way, at about 1.7 Mbps for 720p video host video.
 
 ## Requirements
 
