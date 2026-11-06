@@ -24,7 +24,13 @@ import (
 
 var uriAttrRe = regexp.MustCompile(`URI="([^"]+)"`)
 
-var relayClient = &http.Client{Timeout: 60 * time.Second}
+// relayClient has no overall timeout: a relayed MP4 can stream for as long
+// as the episode, and ends with the viewer's request.
+var relayClient = &http.Client{Transport: &http.Transport{
+	Proxy:                 http.ProxyFromEnvironment,
+	ResponseHeaderTimeout: 30 * time.Second,
+	IdleConnTimeout:       90 * time.Second,
+}}
 
 // relayKey returns the signing key, creating it on first use.
 func (s *Server) relayKey() []byte {

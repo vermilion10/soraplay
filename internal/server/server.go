@@ -28,12 +28,12 @@ type Server struct {
 	Provider provider.Provider
 	// AdultProvider serves AniList entries marked adult; nil sends them to Provider.
 	AdultProvider provider.Provider
-	// Fallback is a second source for regular anime, used when Provider
-	// lacks a show or episode, or picked by hand; nil turns it off.
-	Fallback provider.Provider
-	Progress *progress.Worker
-	AniSkip  *aniskip.Client
-	Static   fs.FS // built frontend; index.html is served for unknown paths
+	// Fallbacks are further sources for regular anime, in order, used when
+	// Provider lacks a show or episode, or picked by hand.
+	Fallbacks []provider.Provider
+	Progress  *progress.Worker
+	AniSkip   *aniskip.Client
+	Static    fs.FS // built frontend; index.html is served for unknown paths
 
 	relayOnce     sync.Once
 	relayKeyBytes []byte

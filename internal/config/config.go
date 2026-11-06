@@ -10,14 +10,16 @@ import (
 )
 
 type Config struct {
-	Addr          string // listen address
-	DataDir       string // SQLite database and other state
-	PublicURL     string // URL the browser uses to reach the app; used for the OAuth redirect
-	ClientID      string // AniList API client
-	ClientSecret  string
-	SourceABase string
-	SourceEBase   string // source for adult entries; "off" disables it
-	FallbackBase  string // source-b.example, tried when Source A lacks an episode; "off" disables it
+	Addr           string // listen address
+	DataDir        string // SQLite database and other state
+	PublicURL      string // URL the browser uses to reach the app; used for the OAuth redirect
+	ClientID       string // AniList API client
+	ClientSecret   string
+	SourceABase  string
+	SourceEBase    string // source for adult entries; "off" disables it
+	FallbackBase   string // source-b.example, tried when Source A lacks an episode; "off" disables it
+	SourceCBase  string // source-c.example, the next fallback; "off" disables it
+	SourceDBase string // source-d.example, the last fallback; "off" disables it
 	// RelayAll sends every stream through the server, so video hosts never
 	// see the viewer's address or this app's Origin.
 	RelayAll bool
@@ -40,6 +42,8 @@ func Load() Config {
 		SourceABase:  env("SOURCE_A_BASE", "https://source-a.example"),
 		SourceEBase:    env("SOURCE_E_BASE", "https://source-e.example"),
 		FallbackBase:   env("SOURCE_B_BASE", "https://source-b.example"),
+		SourceCBase:  env("SOURCE_C_BASE", "https://source-c.example"),
+		SourceDBase: env("SOURCE_D_BASE", "https://source-d.example"),
 		RelayAll:       env("RELAY_ALL", "") == "1",
 		DiscordWebhook: env("DISCORD_WEBHOOK_URL", ""),
 		PrefetchDir:    env("PREFETCH_DIR", ""),

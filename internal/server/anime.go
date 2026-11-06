@@ -47,15 +47,12 @@ type candidateJSON struct {
 
 // sources lists the sources for an anime, preferred first: adult entries
 // come from the adult source when one is configured, everything else from
-// the main one and then the fallback.
+// the main one and then the fallbacks.
 func (s *Server) sources(m *anilist.Media) []provider.Provider {
 	if m.IsAdult && s.AdultProvider != nil {
 		return []provider.Provider{s.AdultProvider}
 	}
-	if s.Fallback != nil {
-		return []provider.Provider{s.Provider, s.Fallback}
-	}
-	return []provider.Provider{s.Provider}
+	return append([]provider.Provider{s.Provider}, s.Fallbacks...)
 }
 
 // providerFor is the preferred source for an anime.
