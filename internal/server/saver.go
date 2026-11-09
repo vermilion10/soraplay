@@ -210,6 +210,9 @@ func (s *Server) wanted(ctx context.Context, items []anilist.ListItem) (map[want
 
 func (s *Server) saveEpisode(ctx context.Context, m *anilist.Media, ep float64) (int64, error) {
 	p := s.providerFor(m)
+	if p == nil {
+		return 0, errors.New("no streaming source is configured")
+	}
 	_, streams, _, err := s.sourceStreams(ctx, m, p, ep)
 	if err != nil {
 		return 0, err

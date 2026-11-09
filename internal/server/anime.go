@@ -52,12 +52,21 @@ func (s *Server) sources(m *anilist.Media) []provider.Provider {
 	if m.IsAdult && s.AdultProvider != nil {
 		return []provider.Provider{s.AdultProvider}
 	}
-	return append([]provider.Provider{s.Provider}, s.Fallbacks...)
+	var out []provider.Provider
+	for _, p := range append([]provider.Provider{s.Provider}, s.Fallbacks...) {
+		if p != nil {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
-// providerFor is the preferred source for an anime.
+// providerFor is the preferred source for an anime, or nil when there is none.
 func (s *Server) providerFor(m *anilist.Media) provider.Provider {
-	return s.sources(m)[0]
+	if all := s.sources(m); len(all) > 0 {
+		return all[0]
+	}
+	return nil
 }
 
 func (s *Server) sourcesJSON(m *anilist.Media) []sourceJSON {
@@ -84,7 +93,11 @@ func (s *Server) animeAndProvider(w http.ResponseWriter, r *http.Request) (*anil
 	}
 	name := r.URL.Query().Get("source")
 	if name == "" {
-		return m, s.providerFor(m), true
+		if p := s.providerFor(m); p != nil {
+			return m, p, true
+		}
+		writeErr(w, http.StatusServiceUnavailable, "no streaming source is configured")
+		return nil, nil, false
 	}
 	for _, p := range s.sources(m) {
 		if p.Name() == name {

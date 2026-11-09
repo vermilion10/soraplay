@@ -85,6 +85,9 @@ func needsCheck(m anilist.Media, a store.Availability) bool {
 func (s *Server) trackOne(ctx context.Context, it anilist.ListItem, seen bool) error {
 	m := it.Media
 	p := s.providerFor(&m)
+	if p == nil {
+		return nil
+	}
 	// Only shows still airing are matched here; others wait until their page is opened.
 	mp, err := s.Store.Mapping(ctx, m.ID, p.Name())
 	if err == nil && mp == nil && m.Status == "RELEASING" {

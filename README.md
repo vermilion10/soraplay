@@ -4,7 +4,7 @@ A self-hosted web app for watching anime with Indonesian subtitles, synced with 
 
 - Your AniList Watching list on the home page, with the next episode one tap away.
 - A small AniList client around it: a weekly airing schedule in your own time zone, season browsing (any season, sorted by popularity, score or trend, filtered by format), and your full list by status with a title filter, one-tap +1 and an editor for status, progress, score, rewatches and dates. Anime pages show related seasons and AniList users' recommendations.
-- Episodes stream with Indonesian subtitles burned in and play in the browser on phones, PCs and TVs. Regular anime comes from source-a.example (720p), with source-b.example, source-c.example and source-d.example as further sources: the next one that has it is used automatically when a show or an episode is missing, and you can switch sources on the anime page or in the player when an episode plays badly. Entries AniList marks as adult come from Source E; set `SOURCE_E_BASE=off` to turn that off.
+- Episodes play in the browser on phones, PCs and TVs, from the streaming sources the build includes (see [Streaming sources](#streaming-sources)). When a source lacks a show or an episode the next one that has it is used automatically, and you can switch sources on the anime page or in the player when an episode plays badly. Entries AniList marks as adult can be sent to a separate source.
 - Finishing an episode (85% watched) updates your progress on AniList. Updates are queued, so a dropped connection or an AniList rate limit never loses one.
 - The next two unwatched episodes of shows you watched in the last two weeks are saved on the server ahead of time, so they start instantly and play even when the source is down. Saved episodes are deleted once watched, and the Saved episodes page (in the account menu) shows what is on disk. Adult titles are never saved.
 - Shows on your Watching list are checked for new episodes every 30 minutes; new ones appear on the home page and, with a Discord webhook set, as a message.
@@ -12,7 +12,7 @@ A self-hosted web app for watching anime with Indonesian subtitles, synced with 
 - Capture scenes while watching (the Capture button, or C). Captures wait in the browser until you save or share them, as the bare scene or with the anime title, episode, time in the episode and date drawn on as a caption bar or a corner tag. They never go to the server.
 - Playback position is saved on the server, so an episode started on one device resumes on another. Intros and endings can be skipped using AniSkip timestamps.
 - Each AniList entry is matched to the right show on the source automatically. When a match is wrong or missing, pick the show by hand and set an episode offset for sources that number split seasons continuously.
-- No ads and no tracking. Source A video plays straight from the source's CDN. Source E's video host only serves the client that requested the stream, so those streams are relayed through the server (signed URLs, about 0.5 Mbps per viewer). video host and VideoHost streams from the other sources are relayed the same way, at about 1.7 Mbps for 720p video host video.
+- No ads and no tracking. Streams play straight from the source's CDN; video hosts that only serve the client that requested a stream are relayed through the server (signed URLs).
 
 ## Requirements
 
@@ -64,17 +64,18 @@ The app is then at `https://<machine>.<tailnet>.ts.net`; use that as `NONTON_PUB
 | `ANILIST_CLIENT_SECRET` | | AniList API client secret |
 | `NONTON_ADDR` | `:8787` | Listen address |
 | `NONTON_DATA` | `data` | Folder for the SQLite database |
-| `SOURCE_A_BASE` | `https://source-a.example` | Source for regular anime, for when its domain changes |
-| `SOURCE_E_BASE` | `https://source-e.example` | Source for adult entries; `off` sends them to Source A |
-| `SOURCE_B_BASE` | `https://source-b.example` | Second source for regular anime; `off` turns it off |
-| `SOURCE_C_BASE` | `https://source-c.example` | Third source for regular anime; `off` turns it off |
-| `SOURCE_D_BASE` | `https://source-d.example` | Fourth source for regular anime; `off` turns it off |
 | `DISCORD_WEBHOOK_URL` | (off) | Discord webhook that gets a message when a new episode of a show you are watching is up |
 | `PREFETCH_DIR` | (off; `/saved` in Docker) | Folder for saving upcoming episodes ahead of time |
 | `PREFETCH_MAX_GB` | `30` | Size cap for saved episodes |
 | `PREFETCH_AHEAD` | `2` | Unwatched episodes kept saved per show |
 | `SAVED_DIR` | `./saved` | Docker only: host folder mounted as `/saved` |
 | `RELAY_ALL` | (off) | `1` relays every stream through the server, so video hosts see neither the viewer's address nor the app's `Origin` header (costs the server's upload bandwidth when watching away from home) |
+
+Streaming sources read their own settings; see [Streaming sources](#streaming-sources).
+
+## Streaming sources
+
+Sources are pluggable. `internal/sources` decides which ones a build uses. A source implements `provider.Provider` (`internal/provider/provider.go`): search a site by title, list a show's episodes, and resolve an episode to a playable HLS or MP4 stream, with any headers its CDN expects. Everything else (matching AniList entries to shows, progress sync, the player, relaying, prefetching) works with whatever sources are there. Without any, the app still browses AniList and tracks progress, but cannot play episodes.
 
 ## Access
 
@@ -88,6 +89,5 @@ Served over HTTPS, SoraPlay can be installed from the browser (Chrome: menu → 
 
 ```bash
 go test ./...                                    # unit tests
-go test -tags live -run Live -v ./internal/...   # tests against the live AniList and source sites
-go run ./cmd/spike search frieren                # try the source scraper from the terminal
+go test -tags live -run Live -v ./internal/...   # tests against the live AniList API
 ```

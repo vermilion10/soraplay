@@ -16,14 +16,9 @@ import (
 	"github.com/vermilion10/nonton/internal/anilist"
 	"github.com/vermilion10/nonton/internal/aniskip"
 	"github.com/vermilion10/nonton/internal/config"
-	"github.com/vermilion10/nonton/internal/httpc"
 	"github.com/vermilion10/nonton/internal/progress"
-	"github.com/vermilion10/nonton/internal/provider"
-	"github.com/vermilion10/nonton/internal/provider/themed"
-	"github.com/vermilion10/nonton/internal/provider/sourcee"
-	"github.com/vermilion10/nonton/internal/provider/sourceb"
-	"github.com/vermilion10/nonton/internal/provider/sourcea"
 	"github.com/vermilion10/nonton/internal/server"
+	"github.com/vermilion10/nonton/internal/sources"
 	"github.com/vermilion10/nonton/internal/store"
 	"github.com/vermilion10/nonton/web"
 )
@@ -40,28 +35,18 @@ func main() {
 	defer st.Close()
 
 	al := anilist.New()
-	var adult provider.Provider
-	if cfg.SourceEBase != "off" {
-		adult = sourcee.New(cfg.SourceEBase, httpc.New())
-	}
-	var fallbacks []provider.Provider
-	if cfg.FallbackBase != "off" {
-		fallbacks = append(fallbacks, sourceb.New(cfg.FallbackBase, httpc.New()))
-	}
-	if cfg.SourceCBase != "off" {
-		fallbacks = append(fallbacks, themed.New("sourcec", "source-c.example", cfg.SourceCBase, httpc.New()))
-	}
-	if cfg.SourceDBase != "off" {
-		fallbacks = append(fallbacks, themed.New("sourced", "source-d.example", cfg.SourceDBase, httpc.New()))
+	src := sources.Load()
+	if src.Main == nil {
+		log.Print("no streaming sources in this build: browsing and progress sync work, playback does not")
 	}
 	worker := progress.NewWorker(st, al)
 	srv := &server.Server{
 		Cfg:           cfg,
 		Store:         st,
 		AniList:       al,
-		Provider:      sourcea.New(cfg.SourceABase, httpc.New()),
-		AdultProvider: adult,
-		Fallbacks:     fallbacks,
+		Provider:      src.Main,
+		AdultProvider: src.Adult,
+		Fallbacks:     src.Fallbacks,
 		Progress:      worker,
 		AniSkip:       aniskip.New(),
 		Static:        web.Dist(),
